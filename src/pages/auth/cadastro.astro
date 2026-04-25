@@ -1,0 +1,69 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+---
+
+<AuthLayout title="Criar Conta">
+  <div class="auth-form-card">
+    <div class="auth-form-header">
+      <img src="/images/logohorizontal.png" class="h-12 w-auto mx-auto mb-8" alt="MQ ACCESS" />
+      <h1 class="auth-form-title">Crie sua conta</h1>
+      <p class="auth-form-subtitle">Junte-se à plataforma de executivos</p>
+    </div>
+
+    <form class="auth-form" id="cadastro-form" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="name">Nome completo</label>
+        <input type="text" id="name" name="name" class="input" placeholder="Seu nome" autocomplete="name" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="email">E-mail</label>
+        <input type="email" id="email" name="email" class="input" placeholder="seu@email.com" autocomplete="email" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Senha</label>
+        <input type="password" id="password" name="password" class="input" placeholder="Mínimo 8 caracteres" autocomplete="new-password" required />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="confirm-password">Confirmar senha</label>
+        <input type="password" id="confirm-password" name="confirm-password" class="input" placeholder="Repita a senha" autocomplete="new-password" required />
+      </div>
+
+      <button type="submit" class="btn-primary btn-full" id="cadastro-submit">
+        Criar Minha Conta
+      </button>
+    </form>
+
+    <p class="auth-switch-text">
+      Já tem uma conta?
+      <a href="/auth/login" class="auth-switch-link">Entrar</a>
+    </p>
+  </div>
+</AuthLayout>
+
+<style>
+  .auth-form-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 32px;
+  }
+  .auth-form-header { margin-bottom: 28px; text-align: center; }
+  .auth-form-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 8px;
+  }
+  .auth-form-subtitle { font-size: 0.875rem; color: #A0A0A0; }
+  .auth-form { display: flex; flex-direction: column; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-label { font-size: 0.8125rem; font-weight: 500; color: #A0A0A0; }
+  .btn-full { width: 100%; margin-top: 8px; height: 48px; font-size: 0.9375rem; }
+  .auth-switch-text { text-align: center; font-size: 0.8125rem; color: #4A4A4A; margin-top: 20px; }
+  .auth-switch-link { color: #C9A96E; font-weight: 500; transition: color 200ms ease; }
+  .auth-switch-link:hover { color: #E8D5A3; }
+</style>

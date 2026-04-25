@@ -1,0 +1,523 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const product = {
+  type: 'MASTERCLASS',
+  title: 'Protocolo C-Level: A Arquitetura da Decisão',
+  author: 'Mario Quirino',
+  isCourse: true,
+  thumbImg: '/protocolo-clevel-thumb.png',
+  description: 'O sistema definitivo para executivos que precisam tomar decisões complexas em ambientes de alta pressão e incerteza. Arquitetura mental, frameworks de análise e posicionamento estratégico que separam lideranças comuns de lideranças irreversíveis.',
+  price: 'R$ 1.997',
+  modules: [
+    { num: '01', title: 'O Arquétipo do Líder de Elite', duration: '4 aulas · 52 min' },
+    { num: '02', title: 'Tomada de Decisão sob Pressão', duration: '6 aulas · 1h 18min' },
+    { num: '03', title: 'Comunicação de Alto Impacto', duration: '5 aulas · 1h 04min' },
+    { num: '04', title: 'Gestão de Energia e Foco', duration: '4 aulas · 48 min' },
+    { num: '05', title: 'Construindo Legado Corporativo', duration: '5 aulas · 1h 12min' },
+  ],
+  stats: [
+    { label: 'Módulos', value: '5' },
+    { label: 'Horas de conteúdo', value: '6h+' },
+    { label: 'Acesso', value: 'Vitalício' },
+  ],
+};
+---
+
+<AppLayout title={product.title}>
+  <div class="pdp-page">
+
+    <!-- Botão Voltar -->
+    <a href="/app/home" class="pdp-back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+      </svg>
+      <span>Voltar</span>
+    </a>
+
+    <!-- Grid principal -->
+    <div class="pdp-grid">
+
+      <!-- ═══ COLUNA ESQUERDA — Cinematic View ═══ -->
+      <div class="pdp-media-col">
+        <div class="pdp-media-wrap">
+
+          <!-- Glow radial de estúdio -->
+          <div class="pdp-glow" aria-hidden="true"></div>
+
+          {product.isCourse ? (
+            <!-- Frame de Curso com Play -->
+            <div class="pdp-video-frame">
+              <div class="pdp-video-thumb">
+                <!-- Imagem real com overlay premium -->
+                <img
+                  src={product.thumbImg}
+                  alt={product.title}
+                  class="pdp-video-img"
+                  loading="eager"
+                />
+                <div class="pdp-video-overlay"></div>
+                <!-- Botão Play -->
+                <button class="pdp-play-btn" aria-label="Assistir trailer">
+                  <div class="pdp-play-ring">
+                    <svg width="24" height="24" viewBox="0 0 24 24" fill="currentColor">
+                      <path d="M8 5.14v14l11-7-11-7z"/>
+                    </svg>
+                  </div>
+                  <span class="pdp-play-label">Assistir Trailer</span>
+                </button>
+              </div>
+            </div>
+          ) : (
+            <!-- Capa de Livro -->
+            <div class="pdp-book-frame">
+              <div class="pdp-book-spine"></div>
+              <div class="pdp-book-cover">
+                <p class="pdp-book-author">Mario Quirino</p>
+                <p class="pdp-book-name">{product.title}</p>
+              </div>
+            </div>
+          )}
+
+          <!-- Stats da mídia -->
+          <div class="pdp-stats-bar">
+            {product.stats.map(s => (
+              <div class="pdp-stat">
+                <span class="pdp-stat-value">{s.value}</span>
+                <span class="pdp-stat-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══ COLUNA DIREITA — Buy Box ═══ -->
+      <div class="pdp-buy-col">
+
+        <!-- Tag do produto -->
+        <div class="pdp-tag">{product.type}</div>
+
+        <!-- Título -->
+        <h1 class="pdp-title">{product.title}</h1>
+
+        <!-- Autor -->
+        <p class="pdp-author">por <span>{product.author}</span></p>
+
+        <!-- Separador -->
+        <div class="pdp-sep"></div>
+
+        <!-- Descrição -->
+        <p class="pdp-description">{product.description}</p>
+
+        <!-- Conteúdo / Módulos -->
+        <div class="pdp-content-section">
+          <p class="pdp-section-label">O que você vai dominar</p>
+          <div class="pdp-modules">
+            {product.modules.map(m => (
+              <div class="pdp-module-item">
+                <span class="pdp-module-num">{m.num}</span>
+                <div class="pdp-module-info">
+                  <p class="pdp-module-title">{m.title}</p>
+                  <p class="pdp-module-meta">{m.duration}</p>
+                </div>
+                <svg class="pdp-module-chevron" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="9 18 15 12 9 6"/>
+                </svg>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- Checkout -->
+        <div class="pdp-checkout">
+          <div class="pdp-price-row">
+            <span class="pdp-price-label">Investimento único</span>
+            <span class="pdp-price">{product.price}</span>
+          </div>
+
+          <a href="/app/checkout" class="pdp-cta" id="pdp-buy-btn">
+            <span>ADQUIRIR ACESSO</span>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </a>
+
+          <p class="pdp-security">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Checkout criptografado e exclusivo MQ.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</AppLayout>
+
+<style>
+  /* ── Página ── */
+  .pdp-page {
+    padding: 24px 16px 48px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── Voltar ── */
+  .pdp-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #4A4A4A;
+    text-decoration: none;
+    margin-bottom: 32px;
+    transition: color 200ms ease;
+  }
+  .pdp-back:hover { color: #A0A0A0; }
+
+  /* ── Grid duas colunas ── */
+  .pdp-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  @media (min-width: 900px) {
+    .pdp-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: start;
+    }
+  }
+
+  /* ══════════════════════════════
+     COLUNA ESQUERDA — Cinematic
+  ══════════════════════════════ */
+  .pdp-media-wrap {
+    position: relative;
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 24px;
+    overflow: hidden;
+    padding: 32px;
+  }
+
+  /* Glow radial de estúdio */
+  .pdp-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 30%, rgba(201,169,110,0.06) 0%, transparent 70%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* Frame do vídeo/curso */
+  .pdp-video-frame {
+    position: relative;
+    z-index: 1;
+    border-radius: 16px;
+    overflow: hidden;
+    aspect-ratio: 16/10;
+    background: #000;
+  }
+
+  .pdp-video-thumb {
+    width: 100%;
+    height: 100%;
+    background: linear-gradient(160deg, #0f0f0f 0%, #1a1210 40%, #0a0a0a 100%);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Imagem real de fundo */
+  .pdp-video-img {
+    position: absolute;
+    inset: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    object-position: center;
+    filter: brightness(0.35) saturate(0.5);
+  }
+
+  /* Grade sutil de linhas — detalhe premium */
+  .pdp-video-overlay {
+    position: absolute;
+    inset: 0;
+    background-image:
+      linear-gradient(rgba(201,169,110,0.03) 1px, transparent 1px),
+      linear-gradient(90deg, rgba(201,169,110,0.03) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+
+  /* Botão Play */
+  .pdp-play-btn {
+    position: relative;
+    z-index: 2;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 14px;
+    background: none;
+    border: none;
+    cursor: pointer;
+    transition: transform 300ms ease;
+  }
+  .pdp-play-btn:hover { transform: scale(1.04); }
+
+  .pdp-play-ring {
+    width: 72px;
+    height: 72px;
+    border-radius: 50%;
+    border: 1px solid rgba(201,169,110,0.4);
+    background: rgba(201,169,110,0.08);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    color: #C9A96E;
+    transition: background 200ms ease, border-color 200ms ease;
+  }
+  .pdp-play-btn:hover .pdp-play-ring {
+    background: rgba(201,169,110,0.16);
+    border-color: rgba(201,169,110,0.7);
+  }
+
+  .pdp-play-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 500;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #A0A0A0;
+  }
+
+  /* Capa de livro */
+  .pdp-book-frame {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: center;
+    padding: 16px 0;
+  }
+  .pdp-book-spine {
+    width: 18px;
+    background: linear-gradient(180deg, #8C6D3F, #C9A96E 40%, #8C6D3F);
+    border-radius: 2px 0 0 2px;
+    box-shadow: inset -2px 0 4px rgba(0,0,0,0.4);
+  }
+  .pdp-book-cover {
+    width: 220px;
+    aspect-ratio: 2/3;
+    background: linear-gradient(160deg, #111111 0%, #0d0d0d 100%);
+    border: 1px solid rgba(201,169,110,0.15);
+    border-radius: 0 4px 4px 0;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .pdp-book-author {
+    font-size: 0.6875rem;
+    color: #C9A96E;
+    letter-spacing: 0.08em;
+    font-family: 'Inter', sans-serif;
+  }
+  .pdp-book-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    color: #F5F5F5;
+    line-height: 1.2;
+  }
+
+  /* Stats bar */
+  .pdp-stats-bar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-around;
+    margin-top: 24px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .pdp-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 4px;
+  }
+  .pdp-stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #F5F5F5;
+  }
+  .pdp-stat-label {
+    font-size: 0.6875rem;
+    color: #4A4A4A;
+    font-family: 'Inter', sans-serif;
+    text-align: center;
+  }
+
+  /* ══════════════════════════════
+     COLUNA DIREITA — Buy Box
+  ══════════════════════════════ */
+  .pdp-tag {
+    display: inline-block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    color: #C9A96E;
+    margin-bottom: 16px;
+  }
+
+  .pdp-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+
+  .pdp-author {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    color: #4A4A4A;
+    margin-bottom: 28px;
+  }
+  .pdp-author span { color: #A0A0A0; }
+
+  .pdp-sep {
+    height: 1px;
+    background: rgba(255,255,255,0.05);
+    margin-bottom: 28px;
+  }
+
+  .pdp-description {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 300;
+    color: #6A6A6A;
+    line-height: 1.7;
+    margin-bottom: 36px;
+  }
+
+  /* Módulos / Conteúdo */
+  .pdp-content-section { margin-bottom: 40px; }
+
+  .pdp-section-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #4A4A4A;
+    margin-bottom: 16px;
+  }
+
+  .pdp-modules { display: flex; flex-direction: column; }
+
+  .pdp-module-item {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 14px 0;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    cursor: pointer;
+    transition: background 200ms ease;
+    border-radius: 4px;
+  }
+  .pdp-module-item:last-child { border-bottom: none; }
+  .pdp-module-item:hover { background: rgba(255,255,255,0.02); }
+
+  .pdp-module-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.875rem;
+    color: #C9A96E;
+    min-width: 24px;
+    opacity: 0.7;
+  }
+
+  .pdp-module-info { flex: 1; }
+  .pdp-module-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #E0E0E0;
+    margin-bottom: 2px;
+  }
+  .pdp-module-meta {
+    font-size: 0.75rem;
+    color: #4A4A4A;
+    font-family: 'Inter', sans-serif;
+  }
+  .pdp-module-chevron { color: #2A2A2A; flex-shrink: 0; }
+
+  /* ── Checkout ── */
+  .pdp-checkout {
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  .pdp-price-row {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    margin-bottom: 20px;
+  }
+  .pdp-price-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    color: #4A4A4A;
+  }
+  .pdp-price {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #F5F5F5;
+  }
+
+  /* CTA */
+  .pdp-cta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    height: 54px;
+    background: #C9A96E;
+    color: #000000;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 250ms ease, opacity 250ms ease;
+    margin-bottom: 12px;
+  }
+  .pdp-cta:hover { background: #E8D5A3; }
+  .pdp-cta:active { opacity: 0.85; }
+
+  /* Micro-copy de segurança */
+  .pdp-security {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: #2E2E2E;
+  }
+</style>

@@ -1,0 +1,1 @@
+import{g as o}from"./index.CzGW6FVa.js";document.addEventListener("astro:page-load",()=>{o.from("#pl-video",{scale:.97,opacity:0,duration:.6,ease:"power2.out"}),o.from(".pl-sidebar",{x:20,opacity:0,duration:.5,delay:.15,ease:"power2.out"})});

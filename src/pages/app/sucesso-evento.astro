@@ -1,0 +1,188 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+---
+
+<BaseLayout title="Vaga Confirmada · Summit MQ">
+<div class="se-shell">
+
+  <!-- Logo -->
+  <div class="se-logo">MQ<span>A</span></div>
+
+  <!-- Ícone de confirmação -->
+  <div class="se-icon" id="se-icon">
+    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+      <polyline points="20 6 9 17 4 12"/>
+    </svg>
+  </div>
+
+  <!-- Copy central -->
+  <div class="se-copy" id="se-copy">
+    <p class="se-eyebrow">RESERVA CONFIRMADA</p>
+    <h1 class="se-title">Sua vaga no<br>Summit MQ está garantida.</h1>
+    <p class="se-sub">O ingresso VIP foi gerado e enviado para o seu e-mail. Nos vemos no Grand Hyatt em 15 de Agosto.</p>
+  </div>
+
+  <!-- Detalhes do ingresso -->
+  <div class="se-card" id="se-card">
+    <div class="se-card-row">
+      <div class="se-card-item">
+        <span class="se-card-label">EVENTO</span>
+        <span class="se-card-val">Summit MQ · São Paulo</span>
+      </div>
+      <div class="se-card-item">
+        <span class="se-card-label">DATA</span>
+        <span class="se-card-val">15 AGO 2026</span>
+      </div>
+      <div class="se-card-item">
+        <span class="se-card-label">CATEGORIA</span>
+        <span class="se-card-val se-card-val--gold">Acesso VIP</span>
+      </div>
+      <div class="se-card-item">
+        <span class="se-card-label">LOCAL</span>
+        <span class="se-card-val">Grand Hyatt Hotel</span>
+      </div>
+    </div>
+  </div>
+
+  <!-- Ações -->
+  <div class="se-actions" id="se-actions">
+    <a href="/app/ingresso" class="se-btn-primary">VER MEU INGRESSO VIP</a>
+    <a href="/app/compras" class="se-btn-secondary">Ir para Minha Biblioteca</a>
+  </div>
+
+  <!-- Próximos passos -->
+  <div class="se-steps" id="se-steps">
+    <p class="se-steps-label">PRÓXIMOS PASSOS</p>
+    <div class="se-step">
+      <div class="se-step-num">01</div>
+      <div>
+        <p class="se-step-title">Verifique seu e-mail</p>
+        <p class="se-step-desc">Você receberá o ingresso digital em até 5 minutos no e-mail cadastrado.</p>
+      </div>
+    </div>
+    <div class="se-step">
+      <div class="se-step-num">02</div>
+      <div>
+        <p class="se-step-title">Salve a data</p>
+        <p class="se-step-desc">15 de Agosto de 2026, das 09h às 20h — Grand Hyatt Hotel, São Paulo.</p>
+      </div>
+    </div>
+    <div class="se-step">
+      <div class="se-step-num">03</div>
+      <div>
+        <p class="se-step-title">Prepare-se para a imersão</p>
+        <p class="se-step-desc">Em breve você receberá um guia de preparação exclusivo para participantes VIP.</p>
+      </div>
+    </div>
+  </div>
+
+</div>
+</BaseLayout>
+
+<script>
+  import { gsap } from 'gsap';
+  document.addEventListener('astro:page-load', () => {
+    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
+    tl.from('#se-icon',    { scale: 0.5, opacity: 0, duration: 0.5 })
+      .from('#se-copy',    { y: 24, opacity: 0, duration: 0.5 }, '-=0.2')
+      .from('#se-card',    { y: 20, opacity: 0, duration: 0.45 }, '-=0.2')
+      .from('#se-actions', { y: 16, opacity: 0, duration: 0.4 }, '-=0.2')
+      .from('#se-steps > *', { y: 16, opacity: 0, stagger: 0.1, duration: 0.4 }, '-=0.15');
+  });
+</script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #000; font-family: 'Inter', sans-serif; color: #E0E0E0; }
+
+  .se-shell {
+    min-height: 100dvh;
+    display: flex; flex-direction: column; align-items: center;
+    justify-content: center;
+    padding: 48px 20px 80px;
+    text-align: center;
+    max-width: 600px; margin: 0 auto;
+  }
+
+  .se-logo {
+    font-size: .75rem; font-weight: 700; letter-spacing: .14em; color: #F5F5F5;
+    margin-bottom: 36px;
+  }
+  .se-logo span { font-family: 'Playfair Display', serif; color: #C9A96E; }
+
+  /* Check icon */
+  .se-icon {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(201,169,110,0.1);
+    border: 1px solid rgba(201,169,110,0.3);
+    display: flex; align-items: center; justify-content: center;
+    color: #C9A96E; margin-bottom: 28px;
+  }
+
+  /* Copy */
+  .se-copy { margin-bottom: 28px; }
+  .se-eyebrow {
+    font-size: .575rem; font-weight: 700; letter-spacing: .2em;
+    color: #C9A96E; margin-bottom: 12px;
+  }
+  .se-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.6rem, 4vw, 2.25rem);
+    font-weight: 700; line-height: 1.2; color: #F5F5F5;
+    margin-bottom: 14px;
+  }
+  .se-sub { font-size: .875rem; color: #4A4A4A; line-height: 1.65; max-width: 440px; }
+
+  /* Card */
+  .se-card {
+    width: 100%; background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 20px 24px; margin-bottom: 24px;
+  }
+  .se-card-row {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
+    text-align: left;
+  }
+  .se-card-item { display: flex; flex-direction: column; gap: 4px; }
+  .se-card-label { font-size: .55rem; font-weight: 700; letter-spacing: .14em; color: #2A2A2A; }
+  .se-card-val   { font-size: .8125rem; font-weight: 500; color: #A0A0A0; }
+  .se-card-val--gold { color: #C9A96E; }
+
+  /* Actions */
+  .se-actions {
+    display: flex; flex-direction: column; align-items: center; gap: 12px;
+    width: 100%; margin-bottom: 40px;
+  }
+  .se-btn-primary {
+    display: flex; align-items: center; justify-content: center;
+    width: 100%; max-width: 380px; height: 52px;
+    background: #C9A96E; color: #000;
+    font-family: 'Inter', sans-serif; font-size: .75rem; font-weight: 800;
+    letter-spacing: .14em; text-decoration: none; border-radius: 10px;
+    transition: background 200ms, transform 150ms;
+  }
+  .se-btn-primary:hover { background: #E8D5A3; transform: translateY(-1px); }
+  .se-btn-secondary {
+    font-size: .75rem; color: #3A3A3A; text-decoration: none;
+    transition: color 200ms;
+  }
+  .se-btn-secondary:hover { color: #E0E0E0; }
+
+  /* Steps */
+  .se-steps { width: 100%; text-align: left; }
+  .se-steps-label {
+    font-size: .55rem; font-weight: 700; letter-spacing: .18em;
+    color: #2A2A2A; margin-bottom: 16px; text-align: center;
+  }
+  .se-step {
+    display: flex; gap: 16px; align-items: flex-start;
+    padding: 16px 0;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .se-step-num {
+    font-size: .625rem; font-weight: 700; color: #C9A96E;
+    letter-spacing: .06em; flex-shrink: 0; padding-top: 2px;
+  }
+  .se-step-title { font-size: .875rem; font-weight: 600; color: #E0E0E0; margin-bottom: 4px; }
+  .se-step-desc  { font-size: .8rem; color: #3A3A3A; line-height: 1.55; }
+</style>

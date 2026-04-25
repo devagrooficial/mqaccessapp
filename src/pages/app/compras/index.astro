@@ -1,0 +1,179 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+---
+
+<AppLayout title="Minhas Compras" activeNav="compras">
+  <div class="compras-page">
+
+    <header class="page-header">
+      <h1 class="page-title">Minhas Compras</h1>
+    </header>
+
+    <!-- TabBar interna -->
+    <div class="tab-bar" id="compras-tabs">
+      <button class="tab-item active" data-tab="digital" id="tab-digital">Digital</button>
+      <button class="tab-item" data-tab="eventos" id="tab-eventos">Eventos</button>
+      <button class="tab-item" data-tab="livros" id="tab-livros">Livros</button>
+    </div>
+
+    <!-- Painel Digital -->
+    <div class="tab-panel active" id="panel-digital">
+      <div class="purchases-list">
+        <div class="card purchase-item">
+          <div class="purchase-icon purchase-icon--course"></div>
+          <div class="purchase-info">
+            <p class="purchase-type">Curso</p>
+            <h3 class="purchase-name">Liderança de Alto Desempenho</h3>
+            <p class="purchase-status">
+              <span class="status-dot status-dot--active"></span>
+              Acesso ativo
+            </p>
+          </div>
+          <a href="/app/player" class="btn-secondary purchase-action">Acessar</a>
+        </div>
+        <div class="card purchase-item">
+          <div class="purchase-icon purchase-icon--subscription"></div>
+          <div class="purchase-info">
+            <p class="purchase-type">Assinatura</p>
+            <h3 class="purchase-name">MQ ACCESS — Plano Anual</h3>
+            <p class="purchase-status">
+              <span class="status-dot status-dot--active"></span>
+              Renova em 12 jan 2027
+            </p>
+          </div>
+          <span class="badge-gold">Ativa</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Painel Eventos -->
+    <div class="tab-panel" id="panel-eventos">
+      <div class="purchases-list">
+        <div class="card purchase-item">
+          <div class="purchase-icon purchase-icon--event"></div>
+          <div class="purchase-info">
+            <p class="purchase-type">Ingresso VIP</p>
+            <h3 class="purchase-name">Summit de Alta Gestão 2026</h3>
+            <p class="purchase-status">15 de Agosto · São Paulo</p>
+          </div>
+          <a href="/app/ingresso" class="btn-secondary purchase-action">Ver QR</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- Painel Livros -->
+    <div class="tab-panel" id="panel-livros">
+      <div class="books-library-grid">
+        {Array.from({ length: 3 }).map(() => (
+          <div class="card library-book-card">
+            <div class="library-book-cover"></div>
+            <div class="library-book-info">
+              <h3 class="library-book-title">Gestão Executiva vol. 1</h3>
+              <p class="library-book-format">PDF · ePub</p>
+              <a href="/app/rastreio-livro" class="btn-secondary library-book-cta">Rastrear</a>
+            </div>
+          </div>
+        ))}
+      </div>
+    </div>
+
+  </div>
+</AppLayout>
+
+<script>
+  const tabs = document.querySelectorAll<HTMLElement>('.tab-item');
+  const panels = document.querySelectorAll<HTMLElement>('.tab-panel');
+
+  tabs.forEach((tab) => {
+    tab.addEventListener('click', () => {
+      const target = tab.dataset.tab;
+      tabs.forEach(t => t.classList.remove('active'));
+      panels.forEach(p => p.classList.remove('active'));
+      tab.classList.add('active');
+      document.getElementById(`panel-${target}`)?.classList.add('active');
+    });
+  });
+</script>
+
+<style>
+  .compras-page { padding: 24px 16px 32px; max-width: 960px; margin: 0 auto; }
+
+  .page-header { margin-bottom: 24px; }
+  .page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #F5F5F5;
+  }
+
+  /* TabBar */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 24px;
+  }
+
+  .tab-item {
+    background: transparent;
+    border: none;
+    color: #4A4A4A;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 200ms ease, border-color 200ms ease;
+  }
+
+  .tab-item.active {
+    color: #C9A96E;
+    border-bottom-color: #C9A96E;
+  }
+
+  .tab-item:hover:not(.active) { color: #A0A0A0; }
+
+  /* Painéis */
+  .tab-panel { display: none; }
+  .tab-panel.active { display: block; }
+
+  /* Purchase items */
+  .purchases-list { display: flex; flex-direction: column; gap: 12px; }
+  .purchase-item { display: flex; align-items: center; gap: 16px; }
+
+  .purchase-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .purchase-icon--course { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+  .purchase-icon--subscription { background: linear-gradient(135deg, #1a2e1a, #162116); }
+  .purchase-icon--event { background: linear-gradient(135deg, #2e1a1a, #211616); }
+
+  .purchase-info { flex: 1; min-width: 0; }
+  .purchase-type { font-size: 0.6875rem; color: #4A4A4A; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+  .purchase-name { font-size: 0.9375rem; font-weight: 500; color: #F5F5F5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .purchase-status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #A0A0A0; margin-top: 4px; }
+
+  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot--active { background-color: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.4); }
+
+  .purchase-action { padding: 8px 14px; font-size: 0.8125rem; }
+
+  /* Books library */
+  .books-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .library-book-card { display: flex; flex-direction: column; gap: 12px; padding: 0; overflow: hidden; }
+  .library-book-cover {
+    width: 100%;
+    aspect-ratio: 2/3;
+    max-height: 180px;
+    background: linear-gradient(160deg, #111111, #0A0A0A);
+  }
+  .library-book-info { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .library-book-title { font-family: 'Playfair Display', serif; font-size: 0.9375rem; color: #F5F5F5; }
+  .library-book-format { font-size: 0.75rem; color: #4A4A4A; }
+  .library-book-cta { padding: 8px 0; font-size: 0.8125rem; }
+</style>

@@ -1,0 +1,77 @@
+---
+// BaseLayout.astro — HTML Shell raiz do MQ ACCESS
+// Todos os outros layouts estendem este
+import { ViewTransitions } from 'astro:transitions';
+import '../styles/global.css';
+
+interface Props {
+  title?: string;
+  description?: string;
+}
+
+const {
+  title = 'MQ ACCESS',
+  description = 'A plataforma exclusiva para executivos e alta gestão.',
+} = Astro.props;
+---
+
+<!doctype html>
+<html lang="pt-BR">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content={description} />
+    <meta name="theme-color" content="#000000" />
+    <link rel="icon" type="image/png" href="/images/logosquad.png" />
+    <title>{title} | MQ ACCESS</title>
+
+    <!-- Google Fonts — preconnect para performance -->
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600&family=Playfair+Display:wght@400;600;700&display=swap"
+      rel="stylesheet"
+    />
+
+    <!-- View Transitions API — sensação de SPA -->
+    <ViewTransitions />
+  </head>
+  <body>
+    <slot />
+
+    <!-- GSAP init global -->
+    <script>
+      import { gsap } from 'gsap';
+      import { ScrollTrigger } from 'gsap/ScrollTrigger';
+
+      gsap.registerPlugin(ScrollTrigger);
+
+      // Revelação suave ao carregar cada página
+      document.addEventListener('astro:page-load', () => {
+        gsap.from('main', {
+          opacity: 0,
+          y: 12,
+          duration: 0.4,
+          ease: 'power2.out',
+          clearProps: 'all',
+        });
+
+        // Revelação stagger de cards
+        const cards = document.querySelectorAll('.card-reveal');
+        if (cards.length > 0) {
+          gsap.from(cards, {
+            opacity: 0,
+            y: 24,
+            stagger: 0.08,
+            duration: 0.5,
+            ease: 'power2.out',
+            scrollTrigger: {
+              trigger: cards[0],
+              start: 'top 85%',
+            },
+          });
+        }
+      });
+    </script>
+  </body>
+</html>

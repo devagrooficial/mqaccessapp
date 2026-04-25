@@ -1,0 +1,1 @@
+import{g as a}from"./index.CzGW6FVa.js";document.addEventListener("astro:page-load",()=>{a.from("#ig-ticket",{y:30,opacity:0,duration:.7,ease:"power3.out"}),a.from("#ig-qr",{scale:.9,opacity:0,duration:.6,delay:.25,ease:"back.out(1.5)"})});

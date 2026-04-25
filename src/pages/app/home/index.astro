@@ -1,0 +1,289 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+---
+
+<AppLayout title="Home" activeNav="home">
+  <div class="home-page">
+
+    <!-- Saudação -->
+    <section class="home-greeting">
+      <p class="greeting-label">Bom dia,</p>
+      <h1 class="greeting-name">Executivo <span class="greeting-badge badge-gold">PRO</span></h1>
+    </section>
+
+    <!-- KPIs / Análises -->
+    <section class="home-section" id="analises">
+      <h2 class="section-title">Análises</h2>
+      <div class="kpi-grid">
+        <div class="card card-reveal kpi-card">
+          <p class="kpi-label">Cursos Concluídos</p>
+          <p class="kpi-value">3</p>
+        </div>
+        <div class="card card-reveal kpi-card">
+          <p class="kpi-label">Eventos Participados</p>
+          <p class="kpi-value">1</p>
+        </div>
+        <div class="card card-reveal kpi-card">
+          <p class="kpi-label">Assinatura</p>
+          <p class="kpi-value kpi-value--gold">Ativa</p>
+        </div>
+        <div class="card card-reveal kpi-card">
+          <p class="kpi-label">Livros na Biblioteca</p>
+          <p class="kpi-value">7</p>
+        </div>
+      </div>
+    </section>
+
+    <!-- Mapeamento Comportamental Banner -->
+    <section class="home-section">
+      <div class="w-full bg-gradient-to-r from-[#111] to-[#000] border border-white/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
+        <div class="flex items-start gap-4">
+          <div class="text-[#D4AF37] shrink-0 mt-1">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+          </div>
+          <div>
+            <h2 class="font-serif text-2xl font-bold text-white mb-2" style="font-family: 'Playfair Display', serif;">Mapeamento Comportamental</h2>
+            <p class="text-sm text-gray-400">Descubra seus vieses de decisão e seu perfil de liderança sob pressão.</p>
+          </div>
+        </div>
+        <a href="/app/analises" class="bg-[#D4AF37] text-black font-bold px-8 py-3 rounded-lg hover:bg-white transition-colors text-sm text-center w-full md:w-auto shrink-0">
+          ACESSAR MINHAS ANÁLISES
+        </a>
+      </div>
+    </section>
+
+    <!-- Cursos em Destaque -->
+    <section class="home-section" id="cursos">
+      <div class="section-header">
+        <h2 class="section-title">Cursos em Destaque</h2>
+        <a href="/app/detalhes" class="section-link">Ver todos</a>
+      </div>
+      <div class="courses-scroll">
+        {([
+          { title: 'Protocolo C-Level: A Arquitetura da Decisão',       img: '/protocolo-clevel-thumb.png' },
+          { title: 'Negociação de Alto Ticket: O Poder do Rapport',      img: '/negociacao-alto-ticket-thumb.png' },
+          { title: 'Escala Exponencial para Software Houses',             img: '/escala-exponencial-thumb.png' },
+          { title: 'Liderança Silenciosa e Influência de Elite',          img: '/lideranca-silenciosa-thumb.png' },
+        ] as { title: string; img: string }[]).map((course) => (
+          <a href="/app/detalhes" class="card card-reveal course-card" style="text-decoration:none;display:block;">
+            <div class="course-thumb">
+              <img src={course.img} alt={course.title} class="course-thumb__img" loading="lazy" />
+            </div>
+            <div class="course-info">
+              <p class="course-instructor">Mario Quirino</p>
+              <h3 class="course-title">{course.title}</h3>
+              <div class="course-footer">
+                <span class="badge-gold">Exclusivo</span>
+                <span class="btn-primary course-cta">Adquirir</span>
+              </div>
+            </div>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <!-- Livros -->
+    <section class="home-section" id="livros">
+      <div class="section-header">
+        <h2 class="section-title">Livros</h2>
+        <a href="/app/detalhes-livro" class="section-link">Ver biblioteca</a>
+      </div>
+      <div class="books-grid">
+        {([
+          { title: 'A Engenharia do Networking',               img: '/engenharia-networking-cover.png' },
+          { title: 'O Código do Executivo',                    img: '/codigo-executivo-cover.png' },
+          { title: 'Mentalidade Sem Limites',                  img: '/mentalidade-sem-limites-cover.png' },
+          { title: 'Gestão de Crises em Ambientes de Pressão', img: '/gestao-crises-cover.png' },
+        ] as { title: string; img: string }[]).map((book) => (
+          <a href="/app/detalhes-livro" class="card card-reveal book-card" style="text-decoration:none;display:flex;flex-direction:column;">
+            <div class="book-cover">
+              <img src={book.img} alt={book.title} class="book-cover__img" loading="lazy" />
+            </div>
+            <p class="book-author">Mario Quirino</p>
+            <h3 class="book-title">{book.title}</h3>
+            <span class="badge-gold" style="margin:0 12px 12px;">Físico + Digital</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+    <!-- Próximos Eventos -->
+    <section class="home-section" id="eventos">
+      <div class="section-header">
+        <h2 class="section-title">Próximos Eventos</h2>
+        <a href="/app/detalhes-evento" class="section-link">Ver todos</a>
+      </div>
+      <div class="events-list">
+        {([
+          { day: '15', month: 'AGO', city: 'São Paulo — SP',          name: 'Summit MQ 2026 · São Paulo',              venue: 'Grand Hyatt',  price: 'R$ 4.997', img: '/summit-mq-banner.png' },
+          { day: '22', month: 'OUT', city: 'Balneário Camboriú — SC', name: 'Networking Exclusive · Balneário Camboriú', venue: 'Oca Beach',   price: 'R$ 2.997', img: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=800&auto=format&fit=crop' },
+        ] as { day: string; month: string; city: string; name: string; venue: string; price: string; img: string }[]).map((ev) => (
+          <a href="/app/detalhes-evento" class="card card-reveal event-card" style="text-decoration:none;overflow:hidden;">
+            <div class="event-img-col">
+              <img src={ev.img} alt={ev.name} class="event-img" loading="lazy" />
+            </div>
+            <div class="event-date">
+              <p class="event-day">{ev.day}</p>
+              <p class="event-month">{ev.month}</p>
+            </div>
+            <div class="event-info">
+              <p class="event-location">{ev.city}</p>
+              <h3 class="event-name">{ev.name}</h3>
+              <p class="event-price">Ingresso VIP · {ev.price}</p>
+            </div>
+            <span class="btn-primary event-cta">Garantir</span>
+          </a>
+        ))}
+      </div>
+    </section>
+
+  </div>
+</AppLayout>
+
+<style>
+  .home-page {
+    padding: 24px 16px 32px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  .home-greeting {
+    margin-bottom: 32px;
+  }
+
+  .greeting-label {
+    font-size: 0.875rem;
+    color: #A0A0A0;
+    margin-bottom: 4px;
+  }
+
+  .greeting-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+
+  /* === Seções === */
+  .home-section { margin-bottom: 40px; }
+  .section-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #4A4A4A;
+    margin-bottom: 16px;
+  }
+  .section-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 16px; }
+  .section-header .section-title { margin-bottom: 0; }
+  .section-link { font-size: 0.75rem; color: #C9A96E; transition: color 200ms ease; }
+  .section-link:hover { color: #E8D5A3; }
+
+  /* === KPI Grid === */
+  .kpi-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (min-width: 640px) { .kpi-grid { grid-template-columns: repeat(4, 1fr); } }
+
+  .kpi-card { padding: 20px 16px; }
+  .kpi-label { font-size: 0.75rem; color: #4A4A4A; margin-bottom: 8px; }
+  .kpi-value { font-size: 2rem; font-weight: 600; color: #F5F5F5; line-height: 1; }
+  .kpi-value--gold { color: #C9A96E; }
+
+  /* === Courses Scroll === */
+  .courses-scroll {
+    display: flex;
+    gap: 16px;
+    overflow-x: auto;
+    padding-bottom: 8px;
+    scrollbar-width: none;
+  }
+  .courses-scroll::-webkit-scrollbar { display: none; }
+
+  .course-card { min-width: 240px; padding: 0; overflow: hidden; }
+  .course-thumb {
+    height: 140px;
+    position: relative;
+    overflow: hidden;
+    background: #0A0A0A;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .course-thumb__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: transform 400ms ease;
+    filter: brightness(0.75);
+  }
+  .course-card:hover .course-thumb__img { transform: scale(1.04); }
+  .course-info { padding: 16px; }
+  .course-instructor { font-size: 0.75rem; color: #C9A96E; margin-bottom: 4px; }
+  .course-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: #F5F5F5;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+  .course-footer { display: flex; align-items: center; justify-content: space-between; }
+  .course-cta { padding: 8px 14px; font-size: 0.8125rem; }
+
+  /* === Books Grid === */
+  .books-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (min-width: 640px) { .books-grid { grid-template-columns: repeat(4, 1fr); } }
+
+  .book-card { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 0; overflow: hidden; }
+  .book-cover {
+    width: 100%;
+    aspect-ratio: 2/3;
+    overflow: hidden;
+    position: relative;
+    background: #0A0A0A;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .book-cover__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    transition: transform 400ms ease;
+    filter: brightness(0.85);
+  }
+  .book-card:hover .book-cover__img { transform: scale(1.03); }
+  .book-author { font-size: 0.6875rem; color: #4A4A4A; padding: 0 12px; }
+  .book-title { font-family: 'Playfair Display', serif; font-size: 0.9375rem; color: #F5F5F5; line-height: 1.2; padding: 0 12px; }
+  .book-card .badge-gold { margin: 0 12px 12px; }
+
+  /* === Events List === */
+  .events-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .event-card { display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden; }
+  .event-img-col {
+    position: absolute; inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .event-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+    filter: brightness(0.18) saturate(0.4);
+    transition: filter 400ms ease;
+  }
+  .event-card:hover .event-img { filter: brightness(0.25) saturate(0.5); }
+  .event-card > *:not(.event-img-col) { position: relative; z-index: 1; }
+  .event-date {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 48px;
+  }
+  .event-day { font-size: 1.5rem; font-weight: 700; color: #C9A96E; line-height: 1; }
+  .event-month { font-size: 0.6875rem; color: #6A6A6A; font-weight: 600; letter-spacing: 0.08em; }
+  .event-info { flex: 1; }
+  .event-location { font-size: 0.75rem; color: #5A5A5A; margin-bottom: 2px; }
+  .event-name { font-family: 'Playfair Display', serif; font-size: 1rem; color: #F5F5F5; line-height: 1.3; margin-bottom: 4px; }
+  .event-price { font-size: 0.8125rem; color: #A0A0A0; }
+  .event-cta { padding: 8px 16px; font-size: 0.8125rem; white-space: nowrap; }
+</style>
