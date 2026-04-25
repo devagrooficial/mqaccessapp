@@ -17,6 +17,10 @@ const activeNav = activeNavProp ??
   (currentPath.startsWith('/app/compras') ? 'compras' :
    currentPath.startsWith('/app/perfil')  ? 'perfil'  : 'home');
 
+// Exibe navegação apenas nas telas primárias (Home, Compras, Perfil)
+const primaryPaths = ['/app/home', '/app/home/', '/app/compras', '/app/compras/', '/app/perfil', '/app/perfil/'];
+const isPrimaryPage = primaryPaths.includes(currentPath);
+
 const navItems = [
   { id: 'home',    label: 'Home',    href: '/app/home',    icon: 'home' },
   { id: 'compras', label: 'Compras', href: '/app/compras', icon: 'bag'  },
@@ -28,7 +32,8 @@ const navItems = [
   <div class="app-shell">
 
 
-    <!-- Sidebar mínima — Desktop (≥ 768px) -->
+    <!-- Sidebar mínima — Desktop (≥ 768px) — apenas em telas primárias -->
+    {isPrimaryPage && (
     <aside class="app-sidebar hidden md:flex" aria-label="Navegação principal">
       <a href="/app/home" class="sidebar-logo" aria-label="MQ ACCESS">
         <img src="/images/logosquad.png" class="w-10 h-10 object-contain mx-auto mb-10 rounded-md border border-[#D4AF37]/20 shadow-[0_0_15px_rgba(212,175,55,0.1)]" alt="MQ" />
@@ -75,15 +80,17 @@ const navItems = [
         </svg>
       </a>
     </aside>
+    )}
 
 
     <!-- Área de conteúdo principal -->
-    <main class="app-main flex-1 min-h-dvh overflow-x-hidden pb-24 md:pb-8 md:ml-16">
+    <main class={`app-main flex-1 min-h-dvh overflow-x-hidden ${isPrimaryPage ? 'pb-24 md:pb-8 md:ml-16' : 'pb-8'}`}>
       <slot />
     </main>
 
 
-    <!-- Bottom Navigation — Mobile (< 768px) -->
+    <!-- Bottom Navigation — Mobile (< 768px) — apenas em telas primárias -->
+    {isPrimaryPage && (
     <nav class="app-bottom-nav flex md:hidden" aria-label="Navegação principal">
       {navItems.map((item) => (
         <a
@@ -117,6 +124,7 @@ const navItems = [
         </a>
       ))}
     </nav>
+    )}
 
   </div>
 </BaseLayout>
