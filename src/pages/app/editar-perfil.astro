@@ -1,38 +1,38 @@
 ---
-import AppLayout from '../../layouts/AppLayout.astro';
+import AppLayout from "../../layouts/AppLayout.astro";
 
 // Puxa o usuário que foi validado pelo middleware
 const supabase = Astro.locals.supabase; // ← cliente SSR com cookies (passa no RLS)
 const user = Astro.locals.user;
 
-let currentName = '';
-let currentEmail = user?.email || '';
-let currentAvatarUrl = '';
+let currentName = "";
+let currentEmail = user?.email || "";
+let currentAvatarUrl = "";
 
-// ── INTERCEPTAÇÃO DO FORMULÁRIO VIA SSR (POST) ────────────────────────────
-if (Astro.request.method === 'POST') {
+// ── INTERCEPTAÇÃO DO FORMULÁRIO VIA  ok SSR (POST) ────────────────────────────
+if (Astro.request.method === "POST") {
   try {
     const formData = await Astro.request.formData();
-    const fullName = formData.get('fullName') as string;
-    const avatarFile = formData.get('avatar') as File | null;
+    const fullName = formData.get("fullName") as string;
+    const avatarFile = formData.get("avatar") as File | null;
 
-    if (!user) throw new Error('Não autorizado');
+    if (!user) throw new Error("Não autorizado");
 
     let avatarUrl: string | undefined = undefined;
 
     // Se o usuário enviou um arquivo válido
     if (avatarFile && avatarFile.size > 0) {
-      const fileExt = avatarFile.name.split('.').pop();
+      const fileExt = avatarFile.name.split(".").pop();
       const filePath = `${user.id}/${Math.random().toString(36).substring(2)}.${fileExt}`;
 
       const { error: uploadError } = await supabase.storage
-        .from('avatars')
+        .from("avatars")
         .upload(filePath, avatarFile, { upsert: true });
 
       if (uploadError) throw uploadError;
 
       const { data: publicUrlData } = supabase.storage
-        .from('avatars')
+        .from("avatars")
         .getPublicUrl(filePath);
 
       avatarUrl = publicUrlData.publicUrl;
@@ -47,51 +47,66 @@ if (Astro.request.method === 'POST') {
     if (avatarUrl) updateData.avatar_url = avatarUrl;
 
     const { error } = await supabase
-      .from('profiles')
-      .upsert(updateData, { onConflict: 'id' });
+      .from("profiles")
+      .upsert(updateData, { onConflict: "id" });
 
     if (error) throw error;
 
     return new Response(JSON.stringify({ success: true, avatarUrl }), {
       status: 200,
-      headers: { 'Content-Type': 'application/json' },
+      headers: { "Content-Type": "application/json" },
     });
   } catch (err: any) {
-    return new Response(JSON.stringify({ error: err.message ?? 'Erro desconhecido' }), {
-      status: 400,
-      headers: { 'Content-Type': 'application/json' },
-    });
+    return new Response(
+      JSON.stringify({ error: err.message ?? "Erro desconhecido" }),
+      {
+        status: 400,
+        headers: { "Content-Type": "application/json" },
+      },
+    );
   }
 }
 
 // ── BUSCA DADOS ATUAIS (GET) ──────────────────────────────────────────────
 if (user) {
   const { data: profile, error: profileError } = await supabase
-    .from('profiles')
-    .select('full_name, avatar_url')
-    .eq('id', user.id)
+    .from("profiles")
+    .select("full_name, avatar_url")
+    .eq("id", user.id)
     .maybeSingle();
 
   if (profileError) {
-    console.error('🚨 [EDITAR-PERFIL] Erro ao buscar perfil:', profileError.message);
+    console.error(
+      "🚨 [EDITAR-PERFIL] Erro ao buscar perfil:",
+      profileError.message,
+    );
   } else if (profile) {
-    currentName = profile.full_name || '';
-    currentAvatarUrl = profile.avatar_url || '';
+    currentName = profile.full_name || "";
+    currentAvatarUrl = profile.avatar_url || "";
   }
 }
 
 // Fallback: avatar gerado via ui-avatars
-const avatarFallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentName || currentEmail || 'U')}&background=D4AF37&color=000&size=192`;
+const avatarFallback = `https://ui-avatars.com/api/?name=${encodeURIComponent(currentName || currentEmail || "U")}&background=D4AF37&color=000&size=192`;
 const avatarSrc = currentAvatarUrl || avatarFallback;
 ---
 
 <AppLayout title="Editar Perfil">
   <div class="edit-page">
-
     <!-- HEADER -->
     <header class="edit-header">
       <a href="/app/perfil" class="edit-back-btn" aria-label="Voltar">
-        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+        <svg
+          xmlns="http://www.w3.org/2000/svg"
+          width="20"
+          height="20"
+          viewBox="0 0 24 24"
+          fill="none"
+          stroke="currentColor"
+          stroke-width="2"
+          stroke-linecap="round"
+          stroke-linejoin="round"><path d="m15 18-6-6 6-6"></path></svg
+        >
       </a>
       <h1 class="edit-title">Editar Perfil</h1>
     </header>
@@ -101,19 +116,47 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
       <p class="edit-card__subtitle">Informações Pessoais</p>
 
       <form id="form-perfil" class="edit-form">
-
         <!-- AVATAR PREMIUM -->
         <div class="avatar-group">
-          <div class="avatar-ring" id="avatar-trigger" role="button" tabindex="0" aria-label="Alterar foto de perfil">
-            <img id="avatar-preview" src={avatarSrc} alt="Foto de perfil" class="avatar-img" />
+          <div
+            class="avatar-ring"
+            id="avatar-trigger"
+            role="button"
+            tabindex="0"
+            aria-label="Alterar foto de perfil"
+          >
+            <img
+              id="avatar-preview"
+              src={avatarSrc}
+              alt="Foto de perfil"
+              class="avatar-img"
+            />
             <div class="avatar-overlay">
-              <svg xmlns="http://www.w3.org/2000/svg" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-                <path d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"/>
-                <circle cx="12" cy="13" r="3"/>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="22"
+                height="22"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+              >
+                <path
+                  d="M14.5 4h-5L7 7H4a2 2 0 0 0-2 2v9a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2V9a2 2 0 0 0-2-2h-3l-2.5-3z"
+                ></path>
+                <circle cx="12" cy="13" r="3"></circle>
               </svg>
             </div>
           </div>
-          <input type="file" id="avatar" name="avatar" accept="image/*" class="avatar-input" />
+          <input
+            type="file"
+            id="avatar"
+            name="avatar"
+            accept="image/*"
+            class="avatar-input"
+          />
           <div class="avatar-meta">
             <p class="avatar-label">Foto de Perfil</p>
             <p class="avatar-hint">JPG, PNG ou WEBP · Máx. 5 MB</p>
@@ -148,18 +191,33 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
               class="field-input field-input--disabled"
             />
             <span class="field-badge-verified">
-              <svg xmlns="http://www.w3.org/2000/svg" width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><path d="m9 11 3 3L22 4"/></svg>
+              <svg
+                xmlns="http://www.w3.org/2000/svg"
+                width="13"
+                height="13"
+                viewBox="0 0 24 24"
+                fill="none"
+                stroke="currentColor"
+                stroke-width="2.5"
+                stroke-linecap="round"
+                stroke-linejoin="round"
+                ><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"></path><path
+                  d="m9 11 3 3L22 4"></path></svg
+              >
               Verificado
             </span>
           </div>
-          <p class="field-hint">Este e-mail é a sua chave de acesso e não pode ser alterado.</p>
+          <p class="field-hint">
+            Este e-mail é a sua chave de acesso e não pode ser alterado.
+          </p>
         </div>
 
         <hr class="edit-divider" />
 
         <!-- AÇÕES -->
         <div class="edit-actions">
-          <span id="form-feedback" class="edit-feedback" style="display:none;"></span>
+          <span id="form-feedback" class="edit-feedback" style="display:none;"
+          ></span>
           <div class="edit-buttons">
             <a href="/app/perfil" class="btn-cancel">Cancelar</a>
             <button type="submit" id="submit-btn" class="btn-save">
@@ -167,29 +225,34 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
             </button>
           </div>
         </div>
-
       </form>
     </div>
-
   </div>
 </AppLayout>
 
 <script>
   function initProfileForm() {
     // ── Preview em tempo real ──────────────────────────────────────────────
-    const avatarInput = document.getElementById('avatar') as HTMLInputElement | null;
-    const avatarPreview = document.getElementById('avatar-preview') as HTMLImageElement | null;
-    const avatarTrigger = document.getElementById('avatar-trigger');
+    const avatarInput = document.getElementById(
+      "avatar",
+    ) as HTMLInputElement | null;
+    const avatarPreview = document.getElementById(
+      "avatar-preview",
+    ) as HTMLImageElement | null;
+    const avatarTrigger = document.getElementById("avatar-trigger");
 
     // Clique no círculo dispara o file input
-    avatarTrigger?.addEventListener('click', () => avatarInput?.click());
-    avatarTrigger?.addEventListener('keydown', (e) => {
-      if ((e as KeyboardEvent).key === 'Enter' || (e as KeyboardEvent).key === ' ') {
+    avatarTrigger?.addEventListener("click", () => avatarInput?.click());
+    avatarTrigger?.addEventListener("keydown", (e) => {
+      if (
+        (e as KeyboardEvent).key === "Enter" ||
+        (e as KeyboardEvent).key === " "
+      ) {
         avatarInput?.click();
       }
     });
 
-    avatarInput?.addEventListener('change', () => {
+    avatarInput?.addEventListener("change", () => {
       const file = avatarInput.files?.[0];
       if (file && avatarPreview) {
         const reader = new FileReader();
@@ -201,93 +264,99 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     });
 
     // ── Submit ─────────────────────────────────────────────────────────────
-    const form = document.getElementById('form-perfil');
+    const form = document.getElementById("form-perfil");
     if (!form) return;
 
     (form as HTMLFormElement).onsubmit = async (e) => {
       e.preventDefault();
 
-      const btnSubmit = form.querySelector<HTMLButtonElement>('button[type="submit"]');
-      const originalBtnText = btnSubmit?.innerText ?? 'Salvar Alterações';
-      const fullNameInput = document.getElementById('fullName') as HTMLInputElement | null;
-      const feedback = document.getElementById('form-feedback') as HTMLSpanElement | null;
-      const newName = fullNameInput?.value.trim() ?? '';
+      const btnSubmit = form.querySelector<HTMLButtonElement>(
+        'button[type="submit"]',
+      );
+      const originalBtnText = btnSubmit?.innerText ?? "Salvar Alterações";
+      const fullNameInput = document.getElementById(
+        "fullName",
+      ) as HTMLInputElement | null;
+      const feedback = document.getElementById(
+        "form-feedback",
+      ) as HTMLSpanElement | null;
+      const newName = fullNameInput?.value.trim() ?? "";
 
       if (!newName) {
         if (feedback) {
-          feedback.textContent = 'Por favor, informe seu nome completo.';
-          feedback.style.display = 'block';
-          feedback.style.color = '#f87171';
+          feedback.textContent = "Por favor, informe seu nome completo.";
+          feedback.style.display = "block";
+          feedback.style.color = "#f87171";
         }
         return;
       }
 
       // Loading
       if (btnSubmit) {
-        btnSubmit.innerText = 'Salvando...';
+        btnSubmit.innerText = "Salvando...";
         btnSubmit.disabled = true;
       }
 
       try {
         // Monta o FormData com nome + arquivo (se selecionado)
         const formData = new FormData();
-        formData.append('fullName', newName);
+        formData.append("fullName", newName);
         if (avatarInput?.files?.[0]) {
-          formData.append('avatar', avatarInput.files[0]);
+          formData.append("avatar", avatarInput.files[0]);
         }
 
         // POST para a própria rota — SSR processa com sessão completa
         const response = await fetch(window.location.pathname, {
-          method: 'POST',
+          method: "POST",
           body: formData,
         });
 
         const json = await response.json();
-        if (!response.ok) throw new Error(json.error || 'Falha no servidor');
+        if (!response.ok) throw new Error(json.error || "Falha no servidor");
 
         // Sucesso
         if (feedback) {
-          feedback.textContent = 'Perfil atualizado com sucesso!';
-          feedback.style.display = 'block';
-          feedback.style.color = '#4ade80';
+          feedback.textContent = "Perfil atualizado com sucesso!";
+          feedback.style.display = "block";
+          feedback.style.color = "#4ade80";
         }
 
         if (btnSubmit) {
-          btnSubmit.innerText = '✓ Perfil Atualizado';
-          btnSubmit.style.backgroundColor = '#4ade80';
-          btnSubmit.style.color = '#000';
-          btnSubmit.style.boxShadow = '0 0 20px rgba(74,222,128,0.3)';
+          btnSubmit.innerText = "✓ Perfil Atualizado";
+          btnSubmit.style.backgroundColor = "#4ade80";
+          btnSubmit.style.color = "#000";
+          btnSubmit.style.boxShadow = "0 0 20px rgba(74,222,128,0.3)";
 
           setTimeout(() => {
             btnSubmit.innerText = originalBtnText;
             btnSubmit.disabled = false;
-            btnSubmit.style.backgroundColor = '';
-            btnSubmit.style.color = '';
-            btnSubmit.style.boxShadow = '';
+            btnSubmit.style.backgroundColor = "";
+            btnSubmit.style.color = "";
+            btnSubmit.style.boxShadow = "";
           }, 2500);
         }
-
       } catch (err: any) {
-        console.error('[MQ] Erro ao salvar perfil:', err?.message ?? err);
+        console.error("[MQ] Erro ao salvar perfil:", err?.message ?? err);
 
         if (feedback) {
-          feedback.textContent = err?.message ?? 'Erro ao salvar. Tente novamente.';
-          feedback.style.display = 'block';
-          feedback.style.color = '#f87171';
+          feedback.textContent =
+            err?.message ?? "Erro ao salvar. Tente novamente.";
+          feedback.style.display = "block";
+          feedback.style.color = "#f87171";
         }
 
         if (btnSubmit) {
           btnSubmit.innerText = originalBtnText;
           btnSubmit.disabled = false;
-          btnSubmit.style.backgroundColor = '';
-          btnSubmit.style.color = '';
+          btnSubmit.style.backgroundColor = "";
+          btnSubmit.style.color = "";
         }
       }
     };
   }
 
   initProfileForm();
-  document.addEventListener('astro:page-load', initProfileForm);
+  document.addEventListener("astro:page-load", initProfileForm);
 </script>
 
 <style>
@@ -313,40 +382,42 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     width: 40px;
     height: 40px;
     border-radius: 50%;
-    background-color: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.06);
-    color: rgba(255,255,255,0.5);
-    transition: background-color 200ms ease, color 200ms ease;
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.06);
+    color: rgba(255, 255, 255, 0.5);
+    transition:
+      background-color 200ms ease,
+      color 200ms ease;
     flex-shrink: 0;
   }
   .edit-back-btn:hover {
-    background-color: rgba(255,255,255,0.1);
+    background-color: rgba(255, 255, 255, 0.1);
     color: #ffffff;
   }
 
   .edit-title {
-    font-family: 'Playfair Display', serif;
+    font-family: "Playfair Display", serif;
     font-size: 1.75rem;
     font-weight: 700;
-    color: #F5F5F5;
+    color: #f5f5f5;
     line-height: 1.2;
   }
 
   /* ── Card ── */
   .edit-card {
-    background-color: #0A0A0A;
-    border: 1px solid rgba(255,255,255,0.06);
+    background-color: #0a0a0a;
+    border: 1px solid rgba(255, 255, 255, 0.06);
     border-radius: 20px;
     padding: 32px 24px;
   }
 
   .edit-card__subtitle {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.8125rem;
     font-weight: 600;
     letter-spacing: 0.08em;
     text-transform: uppercase;
-    color: rgba(255,255,255,0.3);
+    color: rgba(255, 255, 255, 0.3);
     margin-bottom: 28px;
   }
 
@@ -370,14 +441,14 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     height: 88px;
     border-radius: 50%;
     overflow: hidden;
-    border: 2px solid rgba(255,255,255,0.1);
-    background-color: #1A1A1A;
+    border: 2px solid rgba(255, 255, 255, 0.1);
+    background-color: #1a1a1a;
     flex-shrink: 0;
     cursor: pointer;
     transition: border-color 200ms ease;
   }
   .avatar-ring:hover {
-    border-color: rgba(212,175,55,0.4);
+    border-color: rgba(212, 175, 55, 0.4);
   }
 
   .avatar-img {
@@ -390,11 +461,11 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
   .avatar-overlay {
     position: absolute;
     inset: 0;
-    background-color: rgba(0,0,0,0.6);
+    background-color: rgba(0, 0, 0, 0.6);
     display: flex;
     align-items: center;
     justify-content: center;
-    color: rgba(255,255,255,0.85);
+    color: rgba(255, 255, 255, 0.85);
     opacity: 0;
     transition: opacity 200ms ease;
   }
@@ -413,16 +484,16 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
   }
 
   .avatar-label {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.9rem;
     font-weight: 600;
-    color: rgba(255,255,255,0.7);
+    color: rgba(255, 255, 255, 0.7);
   }
 
   .avatar-hint {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.75rem;
-    color: rgba(255,255,255,0.3);
+    color: rgba(255, 255, 255, 0.3);
   }
 
   /* ── Field Groups ── */
@@ -433,35 +504,39 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
   }
 
   .field-label {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.8125rem;
     font-weight: 500;
-    color: rgba(255,255,255,0.45);
+    color: rgba(255, 255, 255, 0.45);
   }
 
   .field-input {
     width: 100%;
     height: 56px;
-    background-color: rgba(255,255,255,0.05);
-    border: 1px solid rgba(255,255,255,0.08);
+    background-color: rgba(255, 255, 255, 0.05);
+    border: 1px solid rgba(255, 255, 255, 0.08);
     border-radius: 12px;
     padding: 0 18px;
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.9375rem;
-    color: #F5F5F5;
+    color: #f5f5f5;
     outline: none;
-    transition: border-color 200ms ease, background-color 200ms ease;
+    transition:
+      border-color 200ms ease,
+      background-color 200ms ease;
     -webkit-appearance: none;
     appearance: none;
   }
-  .field-input::placeholder { color: rgba(255,255,255,0.2); }
+  .field-input::placeholder {
+    color: rgba(255, 255, 255, 0.2);
+  }
   .field-input:focus {
-    border-color: rgba(212,175,55,0.5);
-    background-color: rgba(255,255,255,0.07);
+    border-color: rgba(212, 175, 55, 0.5);
+    background-color: rgba(255, 255, 255, 0.07);
   }
 
   .field-input--disabled {
-    color: rgba(255,255,255,0.25);
+    color: rgba(255, 255, 255, 0.25);
     cursor: not-allowed;
     padding-right: 120px;
   }
@@ -471,7 +546,9 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     display: flex;
     align-items: center;
   }
-  .field-input-wrapper .field-input { width: 100%; }
+  .field-input-wrapper .field-input {
+    width: 100%;
+  }
 
   .field-badge-verified {
     position: absolute;
@@ -479,12 +556,12 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     display: flex;
     align-items: center;
     gap: 5px;
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.6875rem;
     font-weight: 600;
     letter-spacing: 0.04em;
-    color: #10B981;
-    background-color: rgba(16,185,129,0.1);
+    color: #10b981;
+    background-color: rgba(16, 185, 129, 0.1);
     padding: 5px 10px;
     border-radius: 8px;
     white-space: nowrap;
@@ -492,16 +569,16 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
   }
 
   .field-hint {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.75rem;
-    color: rgba(255,255,255,0.25);
+    color: rgba(255, 255, 255, 0.25);
     line-height: 1.5;
   }
 
   /* ── Divider ── */
   .edit-divider {
     border: none;
-    border-top: 1px solid rgba(255,255,255,0.05);
+    border-top: 1px solid rgba(255, 255, 255, 0.05);
     margin: 4px 0;
   }
 
@@ -513,7 +590,7 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
   }
 
   .edit-feedback {
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.875rem;
     text-align: center;
   }
@@ -537,16 +614,18 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     height: 52px;
     padding: 0 28px;
     border-radius: 12px;
-    border: 1px solid rgba(255,255,255,0.1);
+    border: 1px solid rgba(255, 255, 255, 0.1);
     background-color: transparent;
-    font-family: 'Inter', sans-serif;
+    font-family: "Inter", sans-serif;
     font-size: 0.9375rem;
     font-weight: 500;
-    color: rgba(255,255,255,0.5);
-    transition: background-color 200ms ease, color 200ms ease;
+    color: rgba(255, 255, 255, 0.5);
+    transition:
+      background-color 200ms ease,
+      color 200ms ease;
   }
   .btn-cancel:hover {
-    background-color: rgba(255,255,255,0.05);
+    background-color: rgba(255, 255, 255, 0.05);
     color: #ffffff;
   }
 
@@ -559,18 +638,21 @@ const avatarSrc = currentAvatarUrl || avatarFallback;
     padding: 0 32px;
     border-radius: 12px;
     border: none;
-    background-color: #D4AF37;
-    font-family: 'Inter', sans-serif;
+    background-color: #d4af37;
+    font-family: "Inter", sans-serif;
     font-size: 0.9375rem;
     font-weight: 700;
     color: #000000;
     cursor: pointer;
-    box-shadow: 0 0 20px rgba(212,175,55,0.15);
-    transition: background-color 200ms ease, box-shadow 200ms ease, opacity 200ms ease;
+    box-shadow: 0 0 20px rgba(212, 175, 55, 0.15);
+    transition:
+      background-color 200ms ease,
+      box-shadow 200ms ease,
+      opacity 200ms ease;
   }
   .btn-save:hover {
-    background-color: #B5952F;
-    box-shadow: 0 0 30px rgba(212,175,55,0.3);
+    background-color: #b5952f;
+    box-shadow: 0 0 30px rgba(212, 175, 55, 0.3);
   }
   .btn-save:disabled {
     opacity: 0.7;
