@@ -10,16 +10,15 @@
     "astro": "astro"
   },
   "dependencies": {
-    "astro": "^5.18.1",
     "@astrojs/node": "^9.5.5",
-    "@astrojs/vercel": "^9.0.5",
     "@astrojs/tailwind": "^5.1.5",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.0",
+    "@tailwindcss/typography": "^0.5.13",
     "alpinejs": "^3.14.1",
+    "astro": "^5.18.1",
     "gsap": "^3.12.5",
-    "tailwindcss": "^3.4.10",
-    "@tailwindcss/typography": "^0.5.13"
+    "tailwindcss": "^3.4.10"
   },
   "devDependencies": {},
   "packageManager": "yarn@1.22.22"
