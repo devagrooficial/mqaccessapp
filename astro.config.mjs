@@ -3,6 +3,7 @@ import tailwind from '@astrojs/tailwind';
 import node from '@astrojs/node';
 
 export default defineConfig({
+  site: 'https://mqaccessapp.onrender.com',
   output: 'server',
   adapter: node({
     mode: 'standalone',
