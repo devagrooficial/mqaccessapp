@@ -12,7 +12,7 @@ export default defineConfig({
       // Força o bundler a injetar o código desses pacotes diretamente no
       // chunk do servidor, evitando que o ambiente serverless da Vercel
       // tente resolvê-los em node_modules (onde podem ser podados).
-      noExternal: ['@vercel/routing-utils', '@astrojs/vercel'],
+      noExternal: ['@astrojs/vercel'],
     },
   },
 });
