@@ -77,7 +77,7 @@ if (Astro.request.method === 'POST') {
       </div>
     )}
 
-    <form class="auth-form" id="login-form" method="POST" novalidate>
+    <form class="auth-form" id="login-form" action="/auth/login" method="POST" novalidate data-astro-reload>
       <div class="form-group">
         <label class="form-label" for="email">E-mail</label>
         <input
