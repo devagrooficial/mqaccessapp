@@ -11,9 +11,10 @@
   },
   "dependencies": {
     "@astrojs/node": "^10.0.6",
-    "@astrojs/vercel": "^10.0.5",
+    "@astrojs/vercel": "^10.0.6",
     "@supabase/ssr": "^0.10.2",
     "@supabase/supabase-js": "^2.105.0",
+    "@vercel/routing-utils": "^6.2.0",
     "alpinejs": "^3.14.1",
     "gsap": "^3.12.5"
   },
