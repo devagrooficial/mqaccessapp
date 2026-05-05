@@ -1,0 +1,1 @@
+import{g as a}from"./index.xgxdCp6f.js";document.addEventListener("astro:page-load",()=>{a.from(".ck-left > *",{y:20,opacity:0,duration:.45,stagger:.1,ease:"power2.out",delay:.05}),a.from("#ck-summary",{y:20,opacity:0,duration:.5,ease:"power2.out",delay:.25})});

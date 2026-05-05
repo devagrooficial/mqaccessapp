@@ -1,0 +1,101 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const locals = Astro.locals;
+
+const { data: livros, error: livrosError } = await locals.supabase
+  .from('products')
+  .select('*')
+  .in('type', ['ebook', 'physical_book'])
+  .order('created_at', { ascending: false });
+
+if (livrosError) console.error("🚨 Erro ao buscar livros:", livrosError);
+---
+
+<AppLayout title="Biblioteca" activeNav="home">
+  <div class="home-page">
+    
+    <!-- Botão Voltar -->
+    <a href="/app/home" class="inline-flex items-center text-xs font-medium text-[#C9A96E] hover:text-[#E8D5A3] transition-colors mb-8 uppercase tracking-widest">
+      ← Voltar para Home
+    </a>
+
+    <!-- Header -->
+    <header class="mb-10">
+      <h1 class="text-3xl md:text-4xl font-bold text-[#F5F5F5] font-serif mb-2">Biblioteca</h1>
+      <p class="text-sm md:text-base text-neutral-400">Explore nossa coleção selecionada de livros e e-books.</p>
+    </header>
+
+    <!-- Grid -->
+    <div class="books-grid">
+      {livros && livros.length > 0 ? livros.map((livro) => (
+        <a href={`/app/detalhes-livro?id=${livro.id}`} class="card card-reveal book-card" style="text-decoration:none;display:flex;flex-direction:column;">
+          <div class="book-cover">
+            <img
+              src={livro.thumbnail_url || livro.cover_url || '/assets/placeholder-livro.webp'}
+              alt={livro.title}
+              class="book-cover__img"
+              loading="lazy"
+            />
+          </div>
+          <p class="book-author">{livro.author ?? 'Mario Quirino'}</p>
+          <h3 class="book-title">{livro.title}</h3>
+          <span class="badge-gold" style="margin:0 12px 12px;">
+            {livro.product_format === 'physical' ? 'Físico + Digital' : 'Digital'}
+          </span>
+        </a>
+      )) : (
+        <p class="text-neutral-500 italic col-span-full">Nenhum título disponível na biblioteca no momento.</p>
+      )}
+    </div>
+
+  </div>
+</AppLayout>
+
+<style>
+  .home-page {
+    padding: 24px 16px 32px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* === Books Grid (Home Exact Clone) === */
+  .books-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 12px; }
+  @media (min-width: 640px) { .books-grid { grid-template-columns: repeat(4, 1fr); } }
+
+  .book-card { display: flex; flex-direction: column; gap: 8px; align-items: flex-start; padding: 0; overflow: hidden; background: #080808; border-radius: 12px; border: 1px solid rgba(255,255,255,0.05); transition: border-color 0.3s; padding-bottom: 8px;}
+  .book-card:hover { border-color: rgba(201,169,110,0.3); }
+  .book-cover {
+    width: 100%;
+    aspect-ratio: 2/3;
+    overflow: hidden;
+    position: relative;
+    background: #0A0A0A;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .book-cover__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center top;
+    transition: transform 400ms ease;
+    filter: brightness(0.85);
+  }
+  .book-card:hover .book-cover__img { transform: scale(1.03); }
+  .book-author { font-size: 0.6875rem; color: #4A4A4A; padding: 0 12px; }
+  .book-title { font-family: 'Playfair Display', serif; font-size: 0.9375rem; color: #F5F5F5; line-height: 1.2; padding: 0 12px; }
+  
+  .badge-gold {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(201,169,110,0.1);
+    border: 1px solid rgba(201,169,110,0.2);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #C9A96E;
+  }
+</style>

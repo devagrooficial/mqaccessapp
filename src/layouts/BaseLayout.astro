@@ -1,7 +1,7 @@
 ---
 // BaseLayout.astro — HTML Shell raiz do MQ ACCESS
 // Todos os outros layouts estendem este
-import { ViewTransitions } from 'astro:transitions';
+import { ClientRouter } from 'astro:transitions';
 import '../styles/global.css';
 
 interface Props {
@@ -34,7 +34,7 @@ const {
     />
 
     <!-- View Transitions API — sensação de SPA -->
-    <ViewTransitions />
+    <ClientRouter />
   </head>
   <body>
     <slot />

@@ -1,0 +1,458 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+
+// ── Cliente SSR autenticado via middleware (tem cookies → passa no RLS) ─────────
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/auth/login');
+}
+
+// ── Busca código de afiliado do profile ───────────────────────────────────
+const { data: profile } = await supabase
+  .from('profiles')
+  .select('affiliate_code')
+  .eq('id', user.id)
+  .single();
+
+const affiliateCode   = profile?.affiliate_code ?? null;
+const myAffiliateLink = affiliateCode
+  ? `https://mqaccess.com.br/checkout?ref=${affiliateCode}`
+  : null;
+
+// ── Busca comissões ───────────────────────────────────────────────────────
+type Comissao = {
+  id: string;
+  created_at: string;
+  product_name: string;
+  buyer_name: string;
+  commission_amount: number;
+  status: 'Pendente' | 'Disponível' | 'Pago';
+};
+
+let comissoes: Comissao[] = [];
+
+const { data: comData, error: comError } = await supabase
+  .from('affiliate_commissions')
+  .select('id, created_at, product_name, buyer_name, commission_amount, status')
+  .eq('affiliate_id', user.id)
+  .order('created_at', { ascending: false });
+
+if (comError) {
+  console.error('[MQ] Erro ao buscar comissões:', comError.message);
+} else if (comData) {
+  comissoes = comData as Comissao[];
+}
+
+// ── Cálculos de Dashboard ─────────────────────────────────────────────────
+let totalPendente   = 0;
+let totalDisponivel = 0;
+let totalPago       = 0;
+
+for (const c of comissoes) {
+  if (c.status === 'Pendente')    totalPendente   += Number(c.commission_amount);
+  if (c.status === 'Disponível') totalDisponivel += Number(c.commission_amount);
+  if (c.status === 'Pago')        totalPago       += Number(c.commission_amount);
+}
+
+// ── Helpers ───────────────────────────────────────────────────────────────
+function formatBRL(v: number): string {
+  return new Intl.NumberFormat('pt-BR', { style: 'currency', currency: 'BRL' }).format(v);
+}
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  }).format(new Date(iso));
+}
+
+type StatusKey = 'Disponível' | 'Pendente' | 'Pago';
+const statusStyles: Record<StatusKey, { color: string; bg: string; border: string }> = {
+  'Disponível': { color: '#4ADE80', bg: 'rgba(74,222,128,0.08)',  border: 'rgba(74,222,128,0.2)'  },
+  'Pendente':   { color: '#EAB308', bg: 'rgba(234,179,8,0.08)',   border: 'rgba(234,179,8,0.2)'   },
+  'Pago':       { color: 'rgba(255,255,255,0.35)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)' },
+};
+function getStatusStyle(s: string) {
+  return statusStyles[s as StatusKey] ?? statusStyles['Pago'];
+}
+
+function maskBuyer(name: string): string {
+  const first = name?.split(' ')[0] ?? '—';
+  return `${first} ***`;
+}
+---
+
+<AppLayout title="Link de Afiliação">
+  <div class="afil-page">
+
+    <!-- HEADER -->
+    <header class="afil-header">
+      <a href="/app/perfil" class="afil-back-btn" aria-label="Voltar para Perfil">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <h1 class="afil-title">Afiliados</h1>
+    </header>
+
+    <!-- HERO CARD: Link + Descrição -->
+    <div class="afil-hero">
+      <!-- Glow decorativo -->
+      <div class="afil-hero__glow" aria-hidden="true"></div>
+
+      <div class="afil-hero__body">
+        <div class="afil-hero__copy">
+          <h2 class="afil-hero__headline">Indique e Lucre</h2>
+          <p class="afil-hero__text">
+            Você ganha <strong class="afil-hero__highlight">2% de comissão</strong> sobre o valor de qualquer curso adquirido através do seu link exclusivo.
+          </p>
+        </div>
+
+        <div class="afil-link-group">
+          <label class="afil-link-label">Seu Link Exclusivo</label>
+          {myAffiliateLink ? (
+            <div class="afil-link-row">
+              <div class="afil-link-box" id="link-box">{myAffiliateLink}</div>
+              <button id="btn-copy" class="afil-copy-btn" aria-label="Copiar link">
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect width="14" height="14" x="8" y="8" rx="2" ry="2"/><path d="M4 16c-1.1 0-2-.9-2-2V4c0-1.1.9-2 2-2h10c1.1 0 2 .9 2 2"/></svg>
+                <span>Copiar</span>
+              </button>
+            </div>
+          ) : (
+            <div class="afil-link-pending">
+              Seu código de afiliado está sendo gerado. Aguarde ou contate o suporte.
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+
+    <!-- MÉTRICAS -->
+    <div class="afil-metrics">
+      <div class="metric-card metric-card--highlight">
+        <span class="metric-card__label">Saldo Disponível</span>
+        <strong class="metric-card__value">{formatBRL(totalDisponivel)}</strong>
+        <span class="metric-card__sub">Pronto para saque</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-card__label">Em Garantia</span>
+        <strong class="metric-card__value metric-card__value--dim">{formatBRL(totalPendente)}</strong>
+        <span class="metric-card__sub">Pendente liberação</span>
+      </div>
+      <div class="metric-card">
+        <span class="metric-card__label">Total Sacado</span>
+        <strong class="metric-card__value metric-card__value--muted">{formatBRL(totalPago)}</strong>
+        <span class="metric-card__sub">Histórico de saques</span>
+      </div>
+    </div>
+
+    <!-- TABELA DE INDICAÇÕES -->
+    <div class="afil-table-card">
+      <h3 class="afil-table-card__title">Últimas Indicações</h3>
+
+      {comissoes.length === 0 ? (
+        <div class="afil-empty">
+          <svg xmlns="http://www.w3.org/2000/svg" width="36" height="36" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round"><path d="M16 21v-2a4 4 0 0 0-4-4H6a4 4 0 0 0-4 4v2"/><circle cx="9" cy="7" r="4"/><path d="M22 21v-2a4 4 0 0 0-3-3.87"/><path d="M16 3.13a4 4 0 0 1 0 7.75"/></svg>
+          <p>Nenhuma venda registrada ainda. Compartilhe seu link e comece a lucrar!</p>
+        </div>
+      ) : (
+        <div class="afil-table-wrapper">
+          <table class="afil-table">
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Produto</th>
+                <th>Comprador</th>
+                <th>Comissão</th>
+                <th class="afil-table__right">Status</th>
+              </tr>
+            </thead>
+            <tbody>
+              {comissoes.map((venda) => {
+                const st = getStatusStyle(venda.status);
+                return (
+                  <tr>
+                    <td class="afil-table__muted">{formatDate(venda.created_at)}</td>
+                    <td class="afil-table__strong">{venda.product_name}</td>
+                    <td class="afil-table__muted">{maskBuyer(venda.buyer_name)}</td>
+                    <td class="afil-table__amount">+{formatBRL(venda.commission_amount)}</td>
+                    <td class="afil-table__right">
+                      <span
+                        class="afil-badge"
+                        style={`color:${st.color};background:${st.bg};border-color:${st.border};`}
+                      >{venda.status}</span>
+                    </td>
+                  </tr>
+                );
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+
+  </div>
+</AppLayout>
+
+<script>
+  function initAffiliate() {
+    const btnCopy = document.getElementById('btn-copy');
+    const linkBox = document.getElementById('link-box');
+    if (!btnCopy || !linkBox) return;
+
+    // Clona para limpar listeners residuais (View Transitions)
+    const fresh = btnCopy.cloneNode(true) as HTMLButtonElement;
+    btnCopy.replaceWith(fresh);
+
+    fresh.addEventListener('click', async () => {
+      const linkText = (linkBox as HTMLElement).innerText.trim();
+      try {
+        await navigator.clipboard.writeText(linkText);
+
+        const originalHTML = fresh.innerHTML;
+        fresh.innerHTML = `
+          <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Copiado!</span>`;
+        fresh.style.backgroundColor = '#4ade80';
+        fresh.style.color = '#000';
+
+        setTimeout(() => {
+          fresh.innerHTML = originalHTML;
+          fresh.style.backgroundColor = '';
+          fresh.style.color = '';
+        }, 2000);
+
+      } catch (err) {
+        console.error('[MQ] Falha ao copiar link:', err);
+        alert('Não foi possível copiar o link. Copie manualmente.');
+      }
+    });
+  }
+
+  initAffiliate();
+  document.addEventListener('astro:page-load', initAffiliate);
+</script>
+
+<style>
+  /* ── Layout ── */
+  .afil-page {
+    padding: 24px 16px 48px;
+    max-width: 800px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+
+  /* ── Header ── */
+  .afil-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+  }
+  .afil-back-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.5);
+    transition: background-color 200ms, color 200ms;
+    flex-shrink: 0;
+  }
+  .afil-back-btn:hover { background-color: rgba(255,255,255,0.1); color: #fff; }
+  .afil-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem; font-weight: 700; color: #F5F5F5;
+  }
+
+  /* ── Hero Card ── */
+  .afil-hero {
+    position: relative;
+    background: linear-gradient(135deg, #0A0A0B 0%, #12110D 100%);
+    border: 1px solid rgba(212,175,55,0.2);
+    border-radius: 20px;
+    padding: 28px 24px;
+    overflow: hidden;
+  }
+  .afil-hero__glow {
+    position: absolute;
+    top: -60px; right: -60px;
+    width: 180px; height: 180px;
+    background-color: #D4AF37;
+    border-radius: 50%;
+    filter: blur(90px);
+    opacity: 0.08;
+    pointer-events: none;
+  }
+  .afil-hero__body { position: relative; z-index: 1; display: flex; flex-direction: column; gap: 24px; }
+  .afil-hero__headline {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem; font-weight: 700; color: #F5F5F5;
+    margin-bottom: 8px;
+  }
+  .afil-hero__text {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem; color: rgba(255,255,255,0.5);
+    line-height: 1.65; max-width: 440px;
+  }
+  .afil-hero__highlight { color: #D4AF37; }
+
+  .afil-link-label {
+    display: block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem; font-weight: 700;
+    letter-spacing: 0.08em; text-transform: uppercase;
+    color: rgba(255,255,255,0.35);
+    margin-bottom: 8px;
+  }
+
+  .afil-link-row {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+
+  .afil-link-box {
+    flex: 1;
+    min-width: 0;
+    background-color: rgba(0,0,0,0.35);
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 12px;
+    padding: 14px 16px;
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-size: 0.8125rem;
+    color: rgba(255,255,255,0.7);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .afil-copy-btn {
+    display: flex; align-items: center; justify-content: center; gap: 8px;
+    padding: 0 20px;
+    border-radius: 12px; border: none;
+    background-color: #D4AF37; color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem; font-weight: 700;
+    cursor: pointer; white-space: nowrap; flex-shrink: 0;
+    transition: background-color 200ms;
+  }
+  .afil-copy-btn:hover { background-color: #B5952F; }
+
+  .afil-link-pending {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.3);
+    padding: 14px 0;
+    font-style: italic;
+  }
+
+  /* ── Métricas ── */
+  .afil-metrics {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  @media (min-width: 560px) {
+    .afil-metrics { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .metric-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 16px;
+    padding: 20px;
+    display: flex; flex-direction: column; gap: 6px;
+    transition: border-color 200ms;
+  }
+  .metric-card--highlight { border-color: rgba(212,175,55,0.2); }
+  .metric-card--highlight:hover { border-color: rgba(212,175,55,0.4); }
+  .metric-card:not(.metric-card--highlight):hover { border-color: rgba(255,255,255,0.1); }
+
+  .metric-card__label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem; font-weight: 500;
+    color: rgba(255,255,255,0.4);
+  }
+  .metric-card__value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem; color: #F5F5F5;
+  }
+  .metric-card__value--dim   { font-size: 1.5rem; color: rgba(255,255,255,0.6); }
+  .metric-card__value--muted { font-size: 1.5rem; color: rgba(255,255,255,0.35); }
+  .metric-card__sub {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: rgba(255,255,255,0.2);
+  }
+
+  /* ── Tabela ── */
+  .afil-table-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 24px;
+  }
+  .afil-table-card__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.125rem; font-weight: 700;
+    color: #F5F5F5; margin-bottom: 20px;
+  }
+
+  .afil-empty {
+    display: flex; flex-direction: column; align-items: center;
+    gap: 12px; padding: 36px 16px; text-align: center;
+    border: 1px dashed rgba(255,255,255,0.08);
+    border-radius: 14px;
+    color: rgba(255,255,255,0.2);
+    font-family: 'Inter', sans-serif; font-size: 0.875rem;
+    line-height: 1.6;
+  }
+
+  .afil-table-wrapper { overflow-x: auto; }
+
+  .afil-table {
+    width: 100%;
+    border-collapse: collapse;
+    text-align: left;
+  }
+
+  .afil-table thead tr {
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+  }
+  .afil-table th {
+    padding-bottom: 12px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.625rem; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    color: rgba(255,255,255,0.3);
+    white-space: nowrap;
+  }
+  .afil-table__right { text-align: right; }
+
+  .afil-table tbody tr {
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background-color 150ms;
+  }
+  .afil-table tbody tr:last-child { border-bottom: none; }
+  .afil-table tbody tr:hover { background-color: rgba(255,255,255,0.02); }
+
+  .afil-table td {
+    padding: 14px 0;
+    padding-right: 16px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    white-space: nowrap;
+  }
+  .afil-table__muted   { color: rgba(255,255,255,0.4); }
+  .afil-table__strong  { color: rgba(255,255,255,0.85); font-weight: 500; }
+  .afil-table__amount  { color: #D4AF37; font-weight: 600; }
+
+  .afil-badge {
+    display: inline-block;
+    padding: 3px 10px;
+    border-radius: 99px; border: 1px solid;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5625rem; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+  }
+</style>

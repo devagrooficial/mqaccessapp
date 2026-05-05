@@ -1,5 +1,94 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+
+// ── Cliente SSR autenticado (carrega cookies → passa no RLS) ────────────────
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+const userId   = user?.id ?? '';
+
+console.log("=========================================");
+console.log("👻 [DEBUG COMPRAS] ID da Sessão Local:", userId || '⚠ VAZIO');
+console.log("👻 [DEBUG COMPRAS] Email:", user?.email || '⚠ VAZIO');
+
+// ── Busca compras aprovadas do usuário com JOIN no produto ──────────────────
+const { data: purchases, error: purchasesError } = userId
+  ? await supabase
+      .from('purchases')
+      .select(`
+        id,
+        payment_status,
+        created_at,
+        products (
+          id,
+          type,
+          title,
+          author,
+          thumbnail_url,
+          cover_url
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('payment_status', 'approved')
+  : { data: [], error: null };
+
+console.log("📦 [DEBUG PURCHASES] Erro:", purchasesError);
+console.log("📦 [DEBUG PURCHASES] Total registros:", purchases?.length ?? 0);
+
+// ── Filtra por categoria ──────────────────────────────────────────────────
+const digitalPurchases = purchases?.filter(p =>
+  (p.products as any)?.type === 'masterclass'
+) ?? [];
+
+const ebookPurchases = purchases?.filter(p =>
+  ['ebook', 'book'].includes((p.products as any)?.type)
+) ?? [];
+
+console.log('🎣 [DEBUG] Digital (masterclass only):', digitalPurchases.length);
+console.log('📦 [DEBUG] Ebooks:', ebookPurchases.length);
+
+
+// ── Ingressos: busca direta em tickets (com ticket_code e qr_payload) ────────
+const { data: meusIngressos, error: eventosError } = userId
+  ? await supabase
+      .from('tickets')
+      .select(`
+        id,
+        ticket_code,
+        qr_payload,
+        created_at,
+        event_ticket_tiers:tier_id (
+          name
+        ),
+        events:event_id (
+          id,
+          title,
+          date,
+          venue_name
+        )
+      `)
+      .eq('user_id', userId)
+      .order('created_at', { ascending: false })
+  : { data: [], error: null };
+
+if (eventosError) console.error('🚨 [DEBUG EVENTOS] Erro ao buscar ingressos:', eventosError);
+console.log('🎫 [DEBUG EVENTOS] Ingressos encontrados:', meusIngressos?.length ?? 0);
+
+// Helper: formata data + local do evento
+const formatEventDate = (dateString: string | null, venue?: string) => {
+  if (!dateString) return venue ?? 'Local a confirmar';
+  const date  = new Date(dateString);
+  const day   = date.getDate();
+  const month = date.toLocaleString('pt-BR', { month: 'long' });
+  const fmtM  = month.charAt(0).toUpperCase() + month.slice(1);
+  return `${day} de ${fmtM}${venue ? ' · ' + venue : ''}`;
+};
+
+// Aba Livros
+console.log('📚 [DEBUG] Ebooks (aba Livros):', ebookPurchases.length);
+console.log('=========================================');
+
+
+
 ---
 
 <AppLayout title="Minhas Compras" activeNav="compras">
@@ -11,26 +100,16 @@ import AppLayout from '@/layouts/AppLayout.astro';
 
     <!-- TabBar interna -->
     <div class="tab-bar" id="compras-tabs">
-      <button class="tab-item active" data-tab="digital" id="tab-digital">Digital</button>
-      <button class="tab-item" data-tab="eventos" id="tab-eventos">Eventos</button>
-      <button class="tab-item" data-tab="livros" id="tab-livros">Livros</button>
+      <button class="tab-item" data-tab-target="panel-digital"  id="tab-digital"  aria-selected="true">Digital</button>
+      <button class="tab-item" data-tab-target="panel-eventos"  id="tab-eventos"  aria-selected="false">Eventos</button>
+      <button class="tab-item" data-tab-target="panel-livros"   id="tab-livros"   aria-selected="false">Livros</button>
     </div>
 
-    <!-- Painel Digital -->
-    <div class="tab-panel active" id="panel-digital">
+    <!-- ══ Painel Digital ══════════════════════════════════════════════════ -->
+    <div class="tab-panel" data-tab-content="panel-digital" id="panel-digital">
       <div class="purchases-list">
-        <div class="card purchase-item">
-          <div class="purchase-icon purchase-icon--course"></div>
-          <div class="purchase-info">
-            <p class="purchase-type">Curso</p>
-            <h3 class="purchase-name">Liderança de Alto Desempenho</h3>
-            <p class="purchase-status">
-              <span class="status-dot status-dot--active"></span>
-              Acesso ativo
-            </p>
-          </div>
-          <a href="/app/player" class="btn-secondary purchase-action">Acessar</a>
-        </div>
+
+        <!-- Assinatura (sempre fixo) -->
         <div class="card purchase-item">
           <div class="purchase-icon purchase-icon--subscription"></div>
           <div class="purchase-info">
@@ -43,56 +122,220 @@ import AppLayout from '@/layouts/AppLayout.astro';
           </div>
           <span class="badge-gold">Ativa</span>
         </div>
-      </div>
-    </div>
 
-    <!-- Painel Eventos -->
-    <div class="tab-panel" id="panel-eventos">
-      <div class="purchases-list">
-        <div class="card purchase-item">
-          <div class="purchase-icon purchase-icon--event"></div>
-          <div class="purchase-info">
-            <p class="purchase-type">Ingresso VIP</p>
-            <h3 class="purchase-name">Summit de Alta Gestão 2026</h3>
-            <p class="purchase-status">15 de Agosto · São Paulo</p>
-          </div>
-          <a href="/app/ingresso" class="btn-secondary purchase-action">Ver QR</a>
-        </div>
-      </div>
-    </div>
-
-    <!-- Painel Livros -->
-    <div class="tab-panel" id="panel-livros">
-      <div class="books-library-grid">
-        {Array.from({ length: 3 }).map(() => (
-          <div class="card library-book-card">
-            <div class="library-book-cover"></div>
-            <div class="library-book-info">
-              <h3 class="library-book-title">Gestão Executiva vol. 1</h3>
-              <p class="library-book-format">PDF · ePub</p>
-              <a href="/app/rastreio-livro" class="btn-secondary library-book-cta">Rastrear</a>
+        <!-- Compras digitais do banco -->
+        {digitalPurchases.length > 0 ? digitalPurchases.map((p) => {
+          const prod = p.products as any;
+          return (
+            <div class="card purchase-item">
+              <div class="purchase-thumb">
+                {prod.thumbnail_url
+                  ? <img src={prod.thumbnail_url} alt={prod.title} class="purchase-thumb__img" loading="lazy" />
+                  : <div class="purchase-icon purchase-icon--course"></div>
+                }
+              </div>
+              <div class="purchase-info">
+                <p class="purchase-type">{prod.type === 'ebook' ? 'E-book' : 'Curso'}</p>
+                <h3 class="purchase-name">{prod.title}</h3>
+                <p class="purchase-status">
+                  <span class="status-dot status-dot--active"></span>
+                  Acesso ativo
+                </p>
+              </div>
+              <a
+                href={`/app/player?id=${prod.id}`}
+                class="btn-secondary purchase-action"
+              >Acessar</a>
             </div>
+          );
+        }) : (
+          <div class="empty-state">
+            <p class="empty-title">Nenhum curso adquirido</p>
+            <p class="empty-sub">Explore o catálogo e adquira sua primeira masterclass.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Catálogo</a>
           </div>
-        ))}
+        )}
+      </div>
+    </div>
+
+    <!-- ══ Painel Eventos ════════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" data-tab-content="panel-eventos" id="panel-eventos">
+      <div class="purchases-list">
+
+        {meusIngressos && meusIngressos.length > 0 ? meusIngressos.map((ticket: any) => {
+          const tierData   = ticket.event_ticket_tiers as any;
+          const eventoData = ticket.events as any;
+          const tierName   = tierData?.name ?? 'Acesso Geral';
+          const evTitle    = eventoData?.title ?? 'Evento MQ';
+          const evDate     = formatEventDate(eventoData?.date ?? null, eventoData?.venue_name);
+          const evId       = eventoData?.id ?? '';
+          const code       = ticket.ticket_code ?? '';
+          const qrUrl      = `https://api.qrserver.com/v1/create-qr-code/?size=120x120&color=C9A96E&bgcolor=0A0A0A&data=${encodeURIComponent(code)}`;
+
+          return (
+            <div class="ev-ticket-card card">
+
+              <!-- Header do card -->
+              <div class="ev-ticket-card__header">
+                <div class="ev-ticket-card__icon">
+                  <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <path d="M2 9a1 1 0 011-1h1a2 2 0 000-4H3a1 1 0 01-1-1V2a1 1 0 011-1h18a1 1 0 011 1v1a1 1 0 01-1 1h-1a2 2 0 000 4h1a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V9z"/>
+                  </svg>
+                </div>
+
+                <div class="ev-ticket-card__info">
+                  <span class="ev-ticket-card__tier">{tierName}</span>
+                  <h3 class="ev-ticket-card__title">{evTitle}</h3>
+                  <p class="ev-ticket-card__meta">
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                      <rect x="3" y="4" width="18" height="18" rx="2"/>
+                      <line x1="16" y1="2" x2="16" y2="6"/>
+                      <line x1="8" y1="2" x2="8" y2="6"/>
+                      <line x1="3" y1="10" x2="21" y2="10"/>
+                    </svg>
+                    {evDate}
+                  </p>
+                </div>
+
+                <span class="ev-ticket-card__status">
+                  <span class="status-dot status-dot--active"></span>
+                  Confirmado
+                </span>
+              </div>
+
+              <!-- Divisor tracejado (perfuração de ingresso) -->
+              <div class="ev-ticket-card__perforation"></div>
+
+              <!-- Rodapé: QR Code real + código + CTA -->
+              <div class="ev-ticket-card__footer">
+
+                <!-- QR Code real via api.qrserver.com -->
+                <div class="ev-ticket-card__qr-wrap">
+                  {code ? (
+                    <img
+                      src={qrUrl}
+                      alt={`QR Code ${code}`}
+                      class="ev-ticket-card__qr-img"
+                      loading="lazy"
+                      width="60"
+                      height="60"
+                    />
+                  ) : (
+                    <div class="ev-ticket-card__qr-placeholder">QR</div>
+                  )}
+                  {code && (
+                    <p class="ev-ticket-card__code">{code}</p>
+                  )}
+                </div>
+
+                <a
+                  href={evId ? `/app/sucesso-evento?evento=${evId}&code=${code}` : '#'}
+                  class="ev-ticket-card__cta"
+                >
+                  VER INGRESSO
+                  <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+                    <path d="M5 12h14M12 5l7 7-7 7"/>
+                  </svg>
+                </a>
+              </div>
+
+            </div>
+          );
+        }) : (
+          <div class="empty-state">
+            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="#2A2A2A" stroke-width="1.5">
+              <path d="M2 9a1 1 0 011-1h1a2 2 0 000-4H3a1 1 0 01-1-1V2a1 1 0 011-1h18a1 1 0 011 1v1a1 1 0 01-1 1h-1a2 2 0 000 4h1a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V9z"/>
+            </svg>
+            <p class="empty-title">Nenhum ingresso confirmado</p>
+            <p class="empty-sub">Seus ingressos para eventos aparecerão aqui após a reserva.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Eventos</a>
+          </div>
+        )}
+
+      </div>
+    </div>
+
+
+    <!-- ══ Painel Livros ═══════════════════════════════════════════════════ -->
+
+    <div class="tab-panel hidden" data-tab-content="panel-livros" id="panel-livros">
+      <div class="books-library-grid">
+        {ebookPurchases.length > 0 ? ebookPurchases.map((p: any) => {
+          const prod = p.products as any;
+          return (
+            <a
+              href={`/app/ler?id=${prod?.id ?? ''}`}
+              data-astro-reload
+              class="card library-book-card library-book-card--link"
+            >
+              <div class="library-book-cover">
+                {prod?.cover_url
+                  ? <img src={prod.cover_url} alt={prod.title} class="library-book-cover__img" loading="lazy" />
+                  : <div class="library-book-cover__placeholder"></div>
+                }
+              </div>
+              <div class="library-book-info">
+                <h3 class="library-book-title">{prod?.title ?? 'Livro Digital'}</h3>
+                <p class="library-book-format">Livro Digital</p>
+                <span class="btn-secondary library-book-cta">Acessar</span>
+              </div>
+            </a>
+          );
+        }) : (
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <p class="empty-title">Nenhuma leitura disponível</p>
+            <p class="empty-sub">Seus livros digitais aparecerão aqui após a compra.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Catálogo</a>
+          </div>
+        )}
       </div>
     </div>
 
   </div>
 </AppLayout>
 
-<script>
-  const tabs = document.querySelectorAll<HTMLElement>('.tab-item');
-  const panels = document.querySelectorAll<HTMLElement>('.tab-panel');
+<script is:inline>
+  function initTabs() {
+    var container = document.getElementById('compras-tabs');
+    var tabPanels = document.querySelectorAll('[data-tab-content]');
 
-  tabs.forEach((tab) => {
-    tab.addEventListener('click', () => {
-      const target = tab.dataset.tab;
-      tabs.forEach(t => t.classList.remove('active'));
-      panels.forEach(p => p.classList.remove('active'));
-      tab.classList.add('active');
-      document.getElementById(`panel-${target}`)?.classList.add('active');
+    if (!container) return;
+
+    // Clona o container para limpar listeners acumulados em View Transitions
+    var fresh = container.cloneNode(true);
+    container.parentNode.replaceChild(fresh, container);
+
+    // activateTab criada APÓS o clone — fecha sobre 'fresh' (nó vivo no DOM)
+    function activateTab(targetId) {
+      // ── Paineis: toggle visibilidade ──────────────────────────────────────
+      tabPanels.forEach(function(panel) {
+        panel.classList.toggle('hidden', panel.id !== targetId);
+      });
+
+      // ── Botões: opera sobre 'fresh' (nó real no DOM) ─────────────────────
+      fresh.querySelectorAll('[data-tab-target]').forEach(function(btn) {
+        var isActive = btn.dataset.tabTarget === targetId;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', String(isActive));
+      });
+    }
+
+    // Delegação de clique no container clonado
+    fresh.addEventListener('click', function(e) {
+      var btn = e.target.closest('[data-tab-target]');
+      if (!btn) return;
+      // Re-sincroniza paineis (necessário após View Transitions)
+      tabPanels = document.querySelectorAll('[data-tab-content]');
+      activateTab(btn.dataset.tabTarget);
     });
-  });
+
+    // Ativa a primeira aba ao inicializar
+    var firstBtn = fresh.querySelector('[data-tab-target]');
+    if (firstBtn) activateTab(firstBtn.dataset.tabTarget);
+  }
+
+  initTabs();
+  document.addEventListener('astro:page-load', initTabs);
 </script>
 
 <style>
@@ -106,7 +349,7 @@ import AppLayout from '@/layouts/AppLayout.astro';
     color: #F5F5F5;
   }
 
-  /* TabBar */
+  /* ── TabBar ─────────────────────────────────────────────────────────────── */
   .tab-bar {
     display: flex;
     gap: 4px;
@@ -135,13 +378,13 @@ import AppLayout from '@/layouts/AppLayout.astro';
 
   .tab-item:hover:not(.active) { color: #A0A0A0; }
 
-  /* Painéis */
-  .tab-panel { display: none; }
-  .tab-panel.active { display: block; }
+  /* ── Painéis ─────────────────────────────────────────────────────────────── */
+  .tab-panel        { display: block; }
+  .tab-panel.hidden { display: none; }
 
-  /* Purchase items */
+  /* ── Purchase items ──────────────────────────────────────────────────────── */
   .purchases-list { display: flex; flex-direction: column; gap: 12px; }
-  .purchase-item { display: flex; align-items: center; gap: 16px; }
+  .purchase-item  { display: flex; align-items: center; gap: 16px; }
 
   .purchase-icon {
     width: 48px;
@@ -149,31 +392,224 @@ import AppLayout from '@/layouts/AppLayout.astro';
     border-radius: 8px;
     flex-shrink: 0;
   }
-  .purchase-icon--course { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+  .purchase-icon--course       { background: linear-gradient(135deg, #1a1a2e, #16213e); }
   .purchase-icon--subscription { background: linear-gradient(135deg, #1a2e1a, #162116); }
-  .purchase-icon--event { background: linear-gradient(135deg, #2e1a1a, #211616); }
+  .purchase-icon--event        { background: linear-gradient(135deg, #2e1a1a, #211616); }
+
+  /* Card de ingresso totalmente clicável */
+  .purchase-item--link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 200ms, transform 180ms;
+  }
+  .purchase-item--link:hover {
+    border-color: rgba(212,175,55,0.45);
+    transform: scale(1.01);
+  }
+
+  /* Thumbnail real do curso no lugar do ícone placeholder */
+  .purchase-thumb {
+    width: 64px;
+    height: 48px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: #111;
+  }
+  .purchase-thumb__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: brightness(0.85);
+  }
 
   .purchase-info { flex: 1; min-width: 0; }
-  .purchase-type { font-size: 0.6875rem; color: #4A4A4A; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
-  .purchase-name { font-size: 0.9375rem; font-weight: 500; color: #F5F5F5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .purchase-type  { font-size: 0.6875rem; color: #4A4A4A; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+  .purchase-name  { font-size: 0.9375rem; font-weight: 500; color: #F5F5F5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .purchase-status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #A0A0A0; margin-top: 4px; }
 
-  .status-dot { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
-  .status-dot--active { background-color: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.4); }
+  .status-dot          { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot--active  { background-color: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.4); }
 
   .purchase-action { padding: 8px 14px; font-size: 0.8125rem; }
 
-  /* Books library */
+  /* ── Empty state ──────────────────────────────────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 48px 24px;
+    text-align: center;
+    border: 1px dashed rgba(255,255,255,0.05);
+    border-radius: 12px;
+  }
+  .empty-title { font-size: 1rem; font-weight: 600; color: #F5F5F5; }
+  .empty-sub   { font-size: 0.875rem; color: #4A4A4A; margin-bottom: 12px; }
+
+  /* ── Books library ──────────────────────────────────────────────────────── */
   .books-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
-  .library-book-card { display: flex; flex-direction: column; gap: 12px; padding: 0; overflow: hidden; }
+  .library-book-card  { display: flex; flex-direction: column; gap: 12px; padding: 0; overflow: hidden; }
   .library-book-cover {
     width: 100%;
     aspect-ratio: 2/3;
     max-height: 180px;
     background: linear-gradient(160deg, #111111, #0A0A0A);
+    overflow: hidden;
   }
-  .library-book-info { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .library-book-cover__img { width: 100%; height: 100%; object-fit: cover; }
+  .library-book-info  { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
   .library-book-title { font-family: 'Playfair Display', serif; font-size: 0.9375rem; color: #F5F5F5; }
   .library-book-format { font-size: 0.75rem; color: #4A4A4A; }
-  .library-book-cta { padding: 8px 0; font-size: 0.8125rem; }
+  .library-book-cta   { padding: 8px 0; font-size: 0.8125rem; }
+
+  /* Card de livro clicável */
+  .library-book-card--link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 200ms, transform 180ms;
+  }
+  .library-book-card--link:hover {
+    border-color: rgba(212,175,55,0.4);
+    transform: scale(1.01);
+  }
+
+  /* Placeholder de capa sem imagem */
+  .library-book-cover__placeholder {
+    width: 100%; height: 100%;
+    background: linear-gradient(160deg, #111, #080808);
+  }
+
+  /* Código do pedido */
+  .library-book-code { color: #3A3A3A; font-size: 0.7rem; }
+
+  /* ── Event Ticket Card ────────────────────────────────────────────────── */
+  .ev-ticket-card {
+    padding: 0;
+    overflow: hidden;
+    border: 1px solid #1A1A1A;
+    transition: border-color 220ms, transform 200ms;
+  }
+  .ev-ticket-card:hover {
+    border-color: rgba(201,169,110,.35);
+    transform: translateY(-1px);
+  }
+
+  /* Header: ícone + info + status */
+  .ev-ticket-card__header {
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 18px 18px 14px;
+  }
+
+  .ev-ticket-card__icon {
+    flex-shrink: 0;
+    width: 44px; height: 44px;
+    border-radius: 8px;
+    background: rgba(201,169,110,.08);
+    border: 1px solid rgba(201,169,110,.15);
+    display: flex; align-items: center; justify-content: center;
+    color: #C9A96E;
+  }
+
+  .ev-ticket-card__info  { flex: 1; min-width: 0; }
+
+  .ev-ticket-card__tier {
+    display: block;
+    font-size: .6rem; font-weight: 700;
+    letter-spacing: .12em; text-transform: uppercase;
+    color: #C9A96E; margin-bottom: 3px;
+  }
+  .ev-ticket-card__title {
+    font-size: .9375rem; font-weight: 600;
+    color: #F5F5F5;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    margin-bottom: 5px;
+  }
+  .ev-ticket-card__meta {
+    display: flex; align-items: center; gap: 5px;
+    font-size: .75rem; color: #555;
+  }
+
+  .ev-ticket-card__status {
+    flex-shrink: 0;
+    display: flex; align-items: center; gap: 5px;
+    font-size: .7rem; color: #A0A0A0;
+    white-space: nowrap;
+  }
+
+  /* Linha de perfuração */
+  .ev-ticket-card__perforation {
+    height: 1px;
+    margin: 0 18px;
+    border-top: 1px dashed #1E1E1E;
+    position: relative;
+  }
+  .ev-ticket-card__perforation::before,
+  .ev-ticket-card__perforation::after {
+    content: '';
+    position: absolute;
+    top: -7px;
+    width: 12px; height: 12px;
+    border-radius: 50%;
+    background: #000;
+    border: 1px solid #111;
+  }
+  .ev-ticket-card__perforation::before { left: -26px; }
+  .ev-ticket-card__perforation::after  { right: -26px; }
+
+  /* Rodapé: QR + CTA */
+  .ev-ticket-card__footer {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 14px 18px 16px;
+  }
+
+  .ev-ticket-card__qr-wrap {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+  }
+  .ev-ticket-card__qr-img {
+    width: 60px; height: 60px;
+    border-radius: 6px;
+    border: 1px solid rgba(201,169,110,.2);
+    display: block;
+  }
+  .ev-ticket-card__qr-placeholder {
+    width: 60px; height: 60px;
+    border-radius: 6px;
+    background: #111;
+    border: 1px solid #222;
+    display: flex; align-items: center; justify-content: center;
+    font-size: .7rem; color: #333;
+  }
+  .ev-ticket-card__code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: .6rem;
+    font-weight: 700;
+    letter-spacing: .06em;
+    color: #C9A96E;
+    text-align: center;
+  }
+  .ev-ticket-card:hover .ev-ticket-card__qr-img { opacity: 1; }
+
+  .ev-ticket-card__cta {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px;
+    background: rgba(201,169,110,.08);
+    border: 1px solid rgba(201,169,110,.25);
+    border-radius: 6px;
+    color: #C9A96E;
+    font-size: .75rem; font-weight: 600;
+    letter-spacing: .06em;
+    text-decoration: none;
+    transition: background 200ms, border-color 200ms;
+  }
+  .ev-ticket-card__cta:hover {
+    background: rgba(201,169,110,.16);
+    border-color: rgba(201,169,110,.5);
+  }
 </style>

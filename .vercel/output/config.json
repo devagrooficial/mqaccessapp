@@ -1,0 +1,128 @@
+{
+	"version": 3,
+	"routes": [
+		{
+			"handle": "filesystem"
+		},
+		{
+			"src": "^/_astro/(.*)$",
+			"headers": {
+				"cache-control": "public, max-age=31536000, immutable"
+			},
+			"continue": true
+		},
+		{
+			"src": "^/_server-islands/([^/]+?)/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/_image/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/analise-detalhes/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/analises/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/checkout/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/checkout-evento/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/compras/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/detalhes/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/detalhes-evento/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/detalhes-livro/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/home/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/ingresso/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/perfil/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/pergunta/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/player/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/rastreio-livro/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/relatorio/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/sucesso-digital/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/sucesso-evento/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/app/sucesso-fisico/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/auth/cadastro/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/auth/esqueceu-senha/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/auth/login/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/auth/logout/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/auth/nova-senha/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/404/?$",
+			"dest": "_render"
+		},
+		{
+			"src": "^/.*$",
+			"dest": "_render",
+			"status": 404
+		}
+	]
+}

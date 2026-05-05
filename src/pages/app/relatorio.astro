@@ -1,123 +1,559 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+if (!user) return Astro.redirect('/auth/login');
+
+const assessmentId = Astro.url.searchParams.get('id');
+if (!assessmentId) return Astro.redirect('/app/analises');
+
+// ── Handler POST: reset do assessment sabotado ───────────────────────────────
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  if (formData.get('action') === 'reset_assessment') {
+    // ON DELETE CASCADE nas egogram_answers garante limpeza total
+    await supabase
+      .from('egogram_assessments')
+      .delete()
+      .eq('id', assessmentId)
+      .eq('user_id', user.id); // dupla validação de ownership
+    return Astro.redirect('/app/pergunta');
+  }
+}
+
+const { data: assessment, error: assessmentError } = await supabase
+  .from('egogram_assessments')
+  .select('id, user_id, created_at')
+  .eq('id', assessmentId)
+  .eq('user_id', user.id)
+  .single();
+
+if (assessmentError || !assessment) return Astro.redirect('/app/analises');
+
+// ── Agrega respostas por tipo ────────────────────────────────────────────────
+const { data: answers } = await supabase
+  .from('egogram_answers')
+  .select('tipo, resposta')
+  .eq('assessment_id', assessmentId);
+
+const totals: Record<string, number> = { PC: 0, PA: 0, A: 0, CL: 0, CA: 0 };
+if (answers) {
+  for (const row of answers) {
+    const t = String(row.tipo).toUpperCase();
+    if (t in totals) totals[t] += Number(row.resposta ?? 0);
+  }
+}
+
+// ── Detecção de sabotagem ─────────────────────────────────────────────────────
+// 50 respostas com valor idêntico = padrão irreal (ex: todos 0 ou todos 3)
+const safeAnswers  = answers ?? [];
+const isSabotaged  =
+  safeAnswers.length === 50 &&
+  safeAnswers.every(ans => Number(ans.resposta) === Number(safeAnswers[0].resposta));
+
+const MAX = 30;
+const pct = (v: number) => Math.round((v / MAX) * 100);
+
+const dimensions = [
+  { key: 'PC', label: 'Pai Crítico',     sub: 'Normativo',  score: totals.PC, percent: pct(totals.PC) },
+  { key: 'PA', label: 'Pai Nutritivo',   sub: 'Protetor',   score: totals.PA, percent: pct(totals.PA) },
+  { key: 'A',  label: 'Adulto',          sub: 'Racional',   score: totals.A,  percent: pct(totals.A)  },
+  { key: 'CL', label: 'Criança Livre',   sub: 'Criativo',   score: totals.CL, percent: pct(totals.CL) },
+  { key: 'CA', label: 'Criança Adaptada',sub: 'Conformista',score: totals.CA, percent: pct(totals.CA) },
+];
+
+// ── Perfil predominante e gargalo ────────────────────────────────────────────
+const dominant = dimensions.reduce((a, b) => (b.score > a.score ? b : a));
+const weakest  = dimensions.reduce((a, b) => (b.score < a.score ? b : a));
+
+// ── Balanço de Energia (Pai vs Criança) ─────────────────────────────────────
+const energyPai     = totals.PC + totals.PA;
+const energyCrianca = totals.CL + totals.CA;
+const energyBalance = energyPai > energyCrianca
+  ? 'Forte controle interno — tendência à sobrecarga e dificuldade de delegar.'
+  : energyCrianca > energyPai
+  ? 'Alta adaptabilidade — risco de dispersão tática e falta de estrutura.'
+  : 'Balanço equilibrado entre controle interno e adaptabilidade.';
+
+// ── Mapa de interpretações ───────────────────────────────────────────────────
+const interpretations: Record<string, { title: string; desc: string; strengths: string[]; blindspots: string[] }> = {
+  PC: {
+    title: 'Pai Crítico',
+    desc: 'Alta orientação a regras, limites e padrões de exigência. Você opera com forte senso de estrutura e autoridade, sendo eficaz em ambientes que demandam disciplina.',
+    strengths: ['Clareza na definição de limites e expectativas', 'Capacidade de manter padrões sob pressão'],
+    blindspots: ['Pode soar excessivamente controlador ou rígido', 'Risco de inibir criatividade e autonomia da equipe'],
+  },
+  PA: {
+    title: 'Pai Nutritivo',
+    desc: 'Forte inclinação para suporte emocional, desenvolvimento de pessoas e liderança servidora. Você prioriza o bem-estar relacional como motor de performance.',
+    strengths: ['Alta empatia e capacidade de gerar confiança', 'Perfil natural de mentoria e retenção de talentos'],
+    blindspots: ['Pode sacrificar limites em prol da aprovação', 'Dificuldade em tomar decisões impopulares'],
+  },
+  A: {
+    title: 'Adulto Estratégico',
+    desc: 'Forte inclinação para a racionalidade sob pressão, priorizando fatos e mitigando a reatividade emocional. Estado ideal para negociações e decisão crítica.',
+    strengths: ['Clareza em negociações hostis', 'Foco em métricas e análise objetiva'],
+    blindspots: ['Pode soar frio em contextos emocionais', 'Dificuldade em gerar rapport emocional rápido'],
+  },
+  CL: {
+    title: 'Criança Livre',
+    desc: 'Alta criatividade, espontaneidade e pensamento lateral. Você performa melhor em ambientes de inovação e constrói conexões autênticas com facilidade.',
+    strengths: ['Alta criatividade e pensamento não-linear', 'Facilidade em criar conexões genuínas'],
+    blindspots: ['Pode comprometer consistência e follow-through', 'Risco de ser percebido como pouco estruturado'],
+  },
+  CA: {
+    title: 'Criança Adaptada',
+    desc: 'Forte influência de figuras de autoridade externas nas suas decisões. Você pode oscilar entre conformidade excessiva e rebeldia automática.',
+    strengths: ['Alta adaptabilidade a diferentes contextos', 'Sensibilidade ao ambiente e expectativas alheias'],
+    blindspots: ['Decisões podem depender de validação externa', 'Risco de reatividade em vez de proatividade'],
+  },
+};
+
+// Textos de gargalo específicos por perfil fraco
+const gargaloTexts: Record<string, string[]> = {
+  PC: ['Dificuldade em impor limites claros e sustentar autoridade', 'Tendência a evitar confrontos necessários'],
+  PA: ['Baixa tolerância ao erro alheio sem suporte emocional', 'Dificuldade de liderar pelo cuidado e desenvolvimento'],
+  A:  ['Decisões impulsionadas por emoção em vez de dados', 'Vulnerabilidade em negociações de alta pressão'],
+  CL: ['Bloqueio criativo e dificuldade com inovação', 'Resistência a ambientes de alta liberdade e autonomia'],
+  CA: ['Dificuldade de ceder em negociações e criar harmonia', 'Resistência automática a liderança e estrutura'],
+};
+
+// ── Dossê de Execução por perfil predominante ─────────────────────────────
+const dossierMap: Record<string, { lideranca: string; sobPressao: string; atrito: string }> = {
+  PC: {
+    lideranca:  'Lidera por normas e expectativas claras. Define padrões altos e monitora conformidade. Eficaz em ambientes de crise que exigem disciplina e hierarquia rígida.',
+    sobPressao: 'Sob pressão extrema, intensifica o controle e pode tornar-se inflexível. Tende a microgerenciar e invalidar contribuições que desafiam sua estrutura mental.',
+    atrito:     'Maior atrito com perfis CL (Criança Livre), que percebe como caóticos e irresponsáveis. Conflito latente com PA, que questiona sua dureza como falta de empatia.',
+  },
+  PA: {
+    lideranca:  'Lidera pelo desenvolvimento e pela confiança. Cria ambientes psícologicamente seguros e é um catalisador natural de talentos. Inspira lealidade de longo prazo.',
+    sobPressao: 'Sob pressão, prioriza o bem-estar coletivo sobre a eficiência, podendo adiar decisões difíceis. Risco de perder autoridade ao tentar preservar relações em cenários de crise.',
+    atrito:     'Maior atrito com PC, que percebe como excessivamente rígido e desumanizante. Conflito tático com A, que parece frio e calculista em situações que exigem sensibilidade.',
+  },
+  A: {
+    lideranca:  'Lidera por dados, lógica e consistência. Avalia cenários sem vieses emocionais e toma decisões calibradas mesmo sob pressão extrema. Referência de racionalidade na equipe.',
+    sobPressao: 'Sob pressão, pode parecer distante e desconectado emocionalmente, gerando desconfiança na equipe. Dificuldade de adaptar o discurso a interlocutores de alta reatividade emocional.',
+    atrito:     'Maior atrito com CA (Criança Adaptada), que percebe como manipulatória ou passivo-agressiva. Tensão com CL, cujo pensamento não-linear contraria sua preferência por previsibilidade.',
+  },
+  CL: {
+    lideranca:  'Lidera por inovação e energia criativa. Quebra paradigmas, gera ideias fora da curva e cria ambientes estímulantes. Atrai profissionais que valorizam autonomia e missão.',
+    sobPressao: 'Sob pressão, pode perder o fio condutor e dispersar a equipe com mudanças de direção. Dificuldade de sustentar execução nos detalhes e manter compromissos de longo prazo.',
+    atrito:     'Maior atrito com PC, que percebe como limitante e burocrático. Conflito com A, que cobra consistência e previsibilidade — valores que o perfil CL não prioriza naturalmente.',
+  },
+  CA: {
+    lideranca:  'Lidera por adaptação e sensibilidade contextual. Lê o ambiente com precisão e ajusta comportamento para maximizar aceitação. Eficaz em contextos de alta política organizacional.',
+    sobPressao: 'Sob pressão, pode oscilar entre submissão excessiva e rebelião reativa. Dificuldade de sustentar uma posição clara sem validação externa, gerando percepção de instabilidade.',
+    atrito:     'Maior atrito com PC, que percebe como autoritarismo não negociável. Tensão com A, cuja frieza racional dificulta a leitura emocional que o perfil CA usa para se orientar.',
+  },
+};
+
+const profile      = interpretations[dominant.key] ?? interpretations['A'];
+const weakestTexts = gargaloTexts[weakest.key] ?? gargaloTexts['A'];
+const dossier      = dossierMap[dominant.key] ?? dossierMap['A'];
+
+// ── Recomendação dinâmica — prioriza gargalo, fallback no dominante ─────────
+const targetSigla = weakest.key;
+
+console.log('🔍 [DEBUG RECOMENDAÇÃO] Sigla buscada (gargalo):', targetSigla);
+
+// 1ª tentativa: aula mapeada para o gargalo (com join no produto pai)
+let { data: recommendedLesson, error: lessonError } = await supabase
+  .from('course_lessons')
+  .select(`
+    id,
+    lesson_title:title,
+    description,
+    product_id,
+    products ( title, thumbnail_url )
+  `)
+  .eq('egogram_target', targetSigla)
+  .limit(1)
+  .maybeSingle();
+
+console.log('📦 [DEBUG RECOMENDAÇÃO] Erro (gargalo):', lessonError);
+console.log('📦 [DEBUG RECOMENDAÇÃO] Aula encontrada (gargalo):', (recommendedLesson as any)?.lesson_title ?? '(nenhuma)');
+
+// 2ª tentativa: se não achou pelo gargalo, tenta pelo perfil dominante
+if (!recommendedLesson && dominant.key !== weakest.key) {
+  console.log('🔄 [DEBUG RECOMENDAÇÃO] Tentando pelo dominante:', dominant.key);
+  const fallback = await supabase
+    .from('course_lessons')
+    .select(`
+      id,
+      lesson_title:title,
+      description,
+      product_id,
+      products ( title, thumbnail_url )
+    `)
+    .eq('egogram_target', dominant.key)
+    .limit(1)
+    .maybeSingle();
+  recommendedLesson = fallback.data ?? null;
+  console.log('📦 [DEBUG RECOMENDAÇÃO] Aula encontrada (dominante):', (recommendedLesson as any)?.lesson_title ?? '(nenhuma)');
+}
+
+const lesson        = recommendedLesson as any ?? null;
+const lessonProduct = lesson?.products as { title?: string; thumbnail_url?: string } | null ?? null;
+
+// Nome do PRODUTO (masterclass) para o headline de venda
+const productName = lessonProduct?.title ?? 'Masterclass de Alta Performance';
+// Título da AULA específica para o copy de conversão
+const lessonTitle = lesson?.lesson_title ?? 'esta aula exclusiva';
+// Thumbnail: do produto pai se disponível, senão fallback estático
+const lessonThumb = lessonProduct?.thumbnail_url ?? '/negociacao-alto-ticket-thumb.png';
+// Link para o funil de compra do produto pai
+const lessonCTA   = lesson?.product_id
+  ? `/app/detalhes?id=${lesson.product_id}`
+  : '/app/home';
+
+const completedDate = new Date(assessment.created_at).toLocaleDateString('pt-BR', {
+  day: '2-digit', month: 'long', year: 'numeric',
+});
+
+// Para o Radar Chart SVG (valores 0–100)
+const chartData = dimensions.map(d => ({ label: d.key, value: d.percent }));
 ---
 
-<AppLayout title="Relatório: Egograma" activeNav="analises">
+<AppLayout title={isSabotaged ? 'Análise Inconclusiva — Egograma' : `Relatório: Egograma — ${profile.title}`} activeNav="analises">
   <div class="report-page">
-    
-    <!-- Header -->
+
+    <!-- Header (sempre visível) -->
     <div class="report-header">
       <a href="/app/analises" class="report-back">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
         Voltar às Análises
       </a>
-      <h1 class="report-title">Relatório: Egograma</h1>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:8px;">
+        <h1 class="report-title">Relatório: Egograma</h1>
+        {completedDate && <span style="font-size:0.75rem; color:#4A4A4A;">{completedDate}</span>}
+      </div>
     </div>
+
+    {isSabotaged ? (
+      <!-- ══ CARD ANÁLISE INCONCLUSIVA ══ -->
+      <section class="sabotage-card">
+        <!-- Ícone de alerta -->
+        <div class="sabotage-icon" aria-hidden="true">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="1.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/>
+            <line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+
+        <p class="sabotage-label">ANÁLISE INCONCLUSIVA</p>
+        <h2 class="sabotage-title">Padrão de Resposta Irreal Detectado</h2>
+        <p class="sabotage-desc">
+          Identificamos um padrão estatisticamente improvável nas suas respostas — todas com o mesmo valor.
+          Para garantir a precisão do seu mapeamento comportamental, é necessário responder com
+          sinceridade às situações propostas. Um perfil impreciso compromete todas as recomendações
+          estratégicas geradas para você.
+        </p>
+
+        <div class="sabotage-cta">
+          <form method="POST">
+            <input type="hidden" name="action" value="reset_assessment" />
+            <button type="submit" class="btn-reset">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M23 4v6h-6"/><path d="M1 20v-6h6"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+              Refazer Mapeamento
+            </button>
+          </form>
+          <a href="/app/analises" class="sabotage-cancel">Cancelar</a>
+        </div>
+      </section>
+    ) : (
+      <!-- ══ RELATÓRIO COMPLETO ══ -->
+      <div class="report-body">
 
     <!-- O Veredito -->
     <section class="report-verdict">
       <p class="verdict-subtitle">PERFIL PREDOMINANTE</p>
-      <h2 class="verdict-title">Adulto Estratégico</h2>
-      <p class="verdict-desc">
-        Seu mapeamento indica uma forte inclinação para a racionalidade sob pressão, priorizando fatos e mitigando a reatividade emocional.
-      </p>
+      <h2 class="verdict-title">{profile.title}</h2>
+      <p class="verdict-desc">{profile.desc}</p>
+
+      <!-- Radar Chart SVG puro — zero dependências -->
+      <div class="radar-wrap" aria-hidden="true">
+        <svg class="radar-svg" viewBox="0 0 220 220" xmlns="http://www.w3.org/2000/svg">
+          <!-- Anéis de referência -->
+          {[20,40,60,80,100].map(r => {
+            const s = r * 0.9;
+            const pts = chartData.map((_,i) => {
+              const a = (Math.PI*2/chartData.length)*i - Math.PI/2;
+              return `${110+Math.cos(a)*s},${110+Math.sin(a)*s}`;
+            }).join(' ');
+            return <polygon points={pts} fill="none" stroke="rgba(255,255,255,0.06)" stroke-width="1"/>;
+          })}
+          <!-- Eixos -->
+          {chartData.map((_,i) => {
+            const a = (Math.PI*2/chartData.length)*i - Math.PI/2;
+            return <line x1="110" y1="110" x2={110+Math.cos(a)*90} y2={110+Math.sin(a)*90} stroke="rgba(255,255,255,0.08)" stroke-width="1"/>;
+          })}
+          <!-- Polígono de dados -->
+          <polygon
+            points={chartData.map((d,i) => {
+              const a = (Math.PI*2/chartData.length)*i - Math.PI/2;
+              const r = (d.value/100)*90;
+              return `${110+Math.cos(a)*r},${110+Math.sin(a)*r}`;
+            }).join(' ')}
+            fill="rgba(212,175,55,0.15)"
+            stroke="#D4AF37"
+            stroke-width="2"
+          />
+          <!-- Pontos e Labels -->
+          {chartData.map((d,i) => {
+            const a = (Math.PI*2/chartData.length)*i - Math.PI/2;
+            const r = (d.value/100)*90;
+            const lx = 110+Math.cos(a)*104;
+            const ly = 110+Math.sin(a)*104;
+            return (
+              <>
+                <circle cx={110+Math.cos(a)*r} cy={110+Math.sin(a)*r} r="4" fill="#D4AF37"/>
+                <text x={lx} y={ly} text-anchor="middle" dominant-baseline="middle" fill="#C9A96E" font-size="11" font-family="Inter,sans-serif" font-weight="600">{d.label}</text>
+              </>
+            );
+          })}
+        </svg>
+      </div>
     </section>
 
-    <!-- Mapeamento Analítico -->
+    <!-- Mapeamento Analítico — barras -->
     <section class="report-section">
-      <h3 class="section-title">Mapeamento Analítico</h3>
+      <h3 class="section-title">Distribuição por Estado</h3>
       <div class="chart-container">
-        <!-- Pai -->
-        <div class="bar-group">
-          <div class="bar-header">
-            <span class="bar-label">Pai <span class="bar-label-sub">(Normativo/Protetor)</span></span>
-            <span class="bar-percent">35%</span>
+        {dimensions.map((d) => (
+          <div class="bar-group">
+            <div class="bar-header">
+              <span class="bar-label">
+                {d.label}
+                <span class="bar-label-sub">({d.sub})</span>
+              </span>
+              <span class={`bar-percent ${d.key === dominant.key ? 'text-gold' : ''}`}>
+                {d.percent}%
+              </span>
+            </div>
+            <div class="bar-track">
+              <div
+                class={`bar-fill ${d.key === dominant.key ? 'bar-fill--highlight' : ''}`}
+                style={`width: ${d.percent}%;`}
+              ></div>
+            </div>
+            <div class="bar-score">{d.score} / {MAX} pts</div>
           </div>
-          <div class="bar-track">
-            <div class="bar-fill" style="width: 35%;"></div>
-          </div>
-        </div>
-        
-        <!-- Adulto -->
-        <div class="bar-group">
-          <div class="bar-header">
-            <span class="bar-label">Adulto <span class="bar-label-sub">(Racional/Analítico)</span></span>
-            <span class="bar-percent text-gold">80%</span>
-          </div>
-          <div class="bar-track">
-            <div class="bar-fill bar-fill--highlight" style="width: 80%;"></div>
-          </div>
-        </div>
-        
-        <!-- Criança -->
-        <div class="bar-group">
-          <div class="bar-header">
-            <span class="bar-label">Criança <span class="bar-label-sub">(Rebelde/Adaptada)</span></span>
-            <span class="bar-percent">20%</span>
-          </div>
-          <div class="bar-track">
-            <div class="bar-fill" style="width: 20%;"></div>
-          </div>
-        </div>
+        ))}
       </div>
     </section>
 
     <!-- O Plano de Calibragem -->
     <section class="report-section">
       <h3 class="section-title">O Plano de Calibragem</h3>
+
+      <!-- Balanço de Energia -->
+      <div class="energy-card">
+        <p class="energy-label">⚡ Balanço de Energia: Pai vs Criança</p>
+        <p class="energy-value">{energyBalance}</p>
+        <div class="energy-bar-row">
+          <span class="energy-tag">Pai {energyPai}pts</span>
+          <div class="energy-track">
+            <div class="energy-fill energy-fill--pai" style={`width:${Math.round((energyPai/(energyPai+energyCrianca||1))*100)}%`}></div>
+          </div>
+          <span class="energy-tag">Criança {energyCrianca}pts</span>
+        </div>
+      </div>
+
       <div class="calibragem-grid">
         <!-- Pontos Fortes -->
         <div class="calibragem-card">
           <h4 class="calibragem-card__title text-green">Pontos Fortes</h4>
           <ul class="calibragem-list">
-            <li>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Clareza em negociações hostis
-            </li>
-            <li>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-              Foco em métricas
-            </li>
+            {profile.strengths.map((s) => (
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+                {s}
+              </li>
+            ))}
           </ul>
         </div>
-        <!-- Pontos Cegos -->
-        <div class="calibragem-card">
-          <h4 class="calibragem-card__title text-red">Pontos Cegos</h4>
+        <!-- Maior Gargalo (menor score) -->
+        <div class="calibragem-card calibragem-card--gargalo">
+          <h4 class="calibragem-card__title text-red">Maior Gargalo — {weakest.label}</h4>
+          <p class="gargalo-hint">Estado com menor ativação ({weakest.score}/{MAX} pts)</p>
           <ul class="calibragem-list">
-            <li>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              Pode soar frio ou distante
-            </li>
-            <li>
-              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
-              Dificuldade em gerar rapport emocional rápido.
-            </li>
+            {weakestTexts.map((b) => (
+              <li>
+                <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="2"><path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+                {b}
+              </li>
+            ))}
           </ul>
         </div>
       </div>
     </section>
 
-    <!-- O Upsell Inteligente -->
-    <section class="upsell-section">
-      <div class="upsell-card">
-        <p class="upsell-subtitle">Recomendação de Alta Performance</p>
-        <div class="upsell-content">
-          <div class="upsell-course-img">
-            <img src="/negociacao-alto-ticket-thumb.png" alt="Negociação de Alto Ticket" class="course-img" loading="lazy" />
+    <!-- ── Dossê de Execução ── -->
+    <section class="report-section">
+      <h3 class="section-title">Dossê de Execução</h3>
+      <div class="dossier-grid">
+
+        <!-- DNA de Liderança -->
+        <div class="dossier-card dossier-card--lead">
+          <div class="dossier-card__icon">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#C9A96E" stroke-width="1.5">
+              <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+            </svg>
           </div>
-          <div class="upsell-info">
-            <h3 class="upsell-title">Negociação de Alto Ticket: O Poder do Rapport</h3>
-            <p class="upsell-desc">Domine a conexão emocional para equilibrar sua racionalidade e fechar contratos maiores.</p>
-          </div>
+          <h4 class="dossier-card__title">Estilo de Liderança</h4>
+          <p class="dossier-card__text">{dossier.lideranca}</p>
         </div>
-        <a href="/app/detalhes" class="btn-upsell">ACESSAR MASTERCLASS</a>
+
+        <!-- Zona de Risco -->
+        <div class="dossier-card dossier-card--risk">
+          <div class="dossier-card__icon dossier-card__icon--risk">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="1.5">
+              <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+              <line x1="12" y1="9" x2="12" y2="13"/>
+              <line x1="12" y1="17" x2="12.01" y2="17"/>
+            </svg>
+          </div>
+          <h4 class="dossier-card__title">Comportamento sob Pressão</h4>
+          <p class="dossier-card__text">{dossier.sobPressao}</p>
+        </div>
+
+        <!-- Mapa de Atritos -->
+        <div class="dossier-card dossier-card--friction">
+          <div class="dossier-card__icon dossier-card__icon--friction">
+            <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="#A78BFA" stroke-width="1.5">
+              <path d="M13 2L3 14h9l-1 8 10-12h-9l1-8z"/>
+            </svg>
+          </div>
+          <h4 class="dossier-card__title">Mapa de Atritos</h4>
+          <p class="dossier-card__text">{dossier.atrito}</p>
+        </div>
+
       </div>
     </section>
+
+    <!-- Recomendação de Alta Performance -->
+    <section class="upsell-section">
+      <div class="upsell-card">
+        <p class="upsell-subtitle">Recomendação Personalizada — {weakest.label}</p>
+        <div class="upsell-content">
+          <div class="upsell-course-img">
+            <img
+              src={lessonThumb}
+              alt={productName}
+              class="course-img"
+              loading="lazy"
+            />
+          </div>
+          <div class="upsell-info">
+            <!-- Headline: nome do PRODUTO (a masterclass que vende) -->
+            <h3 class="upsell-title">{productName}</h3>
+            <!-- Copy de conversão: une a dor do gargalo à solução específica -->
+            <p class="upsell-desc">
+              {lesson
+                ? `Calibre seu gargalo em ${weakest.label} com "${lessonTitle}". ${lesson.description ?? 'Uma aula projetada para elevar o estado que mais freia sua liderança.'}`
+                : 'Domine a conexão emocional para equilibrar seu perfil e fechar contratos maiores.'
+              }
+            </p>
+          </div>
+        </div>
+        <a href={lessonCTA} class="btn-upsell">ACESSAR MASTERCLASS</a>
+      </div>
+      </div>
+    </section>
+
+      </div>
+    )}
 
   </div>
 </AppLayout>
 
 <style>
+  /* ── Sabotage Card ── */
+  .sabotage-card {
+    margin-top: 16px;
+    background-color: #0A0A0A;
+    border: 1px solid rgba(239, 68, 68, 0.25);
+    border-radius: 16px;
+    padding: 40px 32px;
+    text-align: center;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 16px;
+  }
+  .sabotage-icon {
+    width: 64px;
+    height: 64px;
+    border-radius: 50%;
+    background: rgba(239,68,68,0.08);
+    border: 1px solid rgba(239,68,68,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    margin-bottom: 8px;
+  }
+  .sabotage-label {
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.18em;
+    color: #EF4444;
+    text-transform: uppercase;
+  }
+  .sabotage-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.2;
+  }
+  .sabotage-desc {
+    font-size: 0.9375rem;
+    line-height: 1.7;
+    color: #6A6A6A;
+    max-width: 480px;
+  }
+  .sabotage-cta {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 12px;
+    margin-top: 8px;
+    width: 100%;
+    max-width: 320px;
+  }
+  .btn-reset {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    padding: 14px 24px;
+    background-color: #D4AF37;
+    color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    border: none;
+    border-radius: 10px;
+    cursor: pointer;
+    transition: background-color 200ms ease;
+  }
+  .btn-reset:hover { background-color: #F5F5F5; }
+  .sabotage-cancel {
+    font-size: 0.8125rem;
+    color: #3A3A3A;
+    text-decoration: none;
+    transition: color 200ms;
+  }
+  .sabotage-cancel:hover { color: #A0A0A0; }
+  .report-body { display: contents; }
+
   .report-page {
     padding: 24px 16px 60px;
     max-width: 768px;
@@ -243,10 +679,16 @@ import AppLayout from '@/layouts/AppLayout.astro';
     height: 100%;
     background-color: #4A4A4A;
     border-radius: 999px;
+    transition: width 0.8s ease;
   }
   .bar-fill--highlight {
     background-color: #D4AF37;
     box-shadow: 0 0 10px rgba(212, 175, 55, 0.4);
+  }
+  .bar-score {
+    font-size: 0.7rem;
+    color: #4A4A4A;
+    text-align: right;
   }
 
   /* Calibragem Grid */
@@ -273,7 +715,7 @@ import AppLayout from '@/layouts/AppLayout.astro';
     letter-spacing: 0.05em;
     margin-bottom: 16px;
   }
-  .text-green { color: #C9A96E; } /* Using Gold as positive brand color */
+  .text-green { color: #C9A96E; }
   .text-red { color: #EF4444; }
   .calibragem-list {
     list-style: none;
@@ -296,7 +738,134 @@ import AppLayout from '@/layouts/AppLayout.astro';
     margin-top: 2px;
   }
 
+  /* Dossier Grid */
+  .dossier-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 16px;
+  }
+  @media (min-width: 640px) {
+    .dossier-grid { grid-template-columns: repeat(3, 1fr); }
+  }
+
+  .dossier-card {
+    background-color: #080808;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 14px;
+    padding: 24px 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    transition: border-color 300ms ease;
+  }
+  .dossier-card--lead    { border-top: 2px solid rgba(201,169,110,0.4); }
+  .dossier-card--risk    { border-top: 2px solid rgba(239,68,68,0.35); }
+  .dossier-card--friction{ border-top: 2px solid rgba(167,139,250,0.35); }
+
+  .dossier-card__icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background: rgba(201,169,110,0.08);
+    border: 1px solid rgba(201,169,110,0.15);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .dossier-card__icon--risk {
+    background: rgba(239,68,68,0.07);
+    border-color: rgba(239,68,68,0.15);
+  }
+  .dossier-card__icon--friction {
+    background: rgba(167,139,250,0.07);
+    border-color: rgba(167,139,250,0.15);
+  }
+
+  .dossier-card__title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #A0A0A0;
+  }
+  .dossier-card__text {
+    font-size: 0.875rem;
+    line-height: 1.65;
+    color: #6A6A6A;
+    flex-grow: 1;
+  }
+
+  /* Radar Chart */
+
+  .radar-wrap {
+    display: flex;
+    justify-content: center;
+    margin-top: 24px;
+  }
+  .radar-svg {
+    width: 220px;
+    height: 220px;
+    overflow: visible;
+  }
+
+  /* Energy Balance */
+  .energy-card {
+    background: #050505;
+    border: 1px solid rgba(212,175,55,0.15);
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 20px;
+  }
+  .energy-label {
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    color: #C9A96E;
+    text-transform: uppercase;
+    margin-bottom: 8px;
+  }
+  .energy-value {
+    font-size: 0.9375rem;
+    color: #F5F5F5;
+    line-height: 1.5;
+    margin-bottom: 16px;
+  }
+  .energy-bar-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .energy-track {
+    flex: 1;
+    height: 8px;
+    background: rgba(255,255,255,0.06);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .energy-fill--pai {
+    height: 100%;
+    background: linear-gradient(90deg, #C9A96E, #D4AF37);
+    border-radius: 999px;
+  }
+  .energy-tag {
+    font-size: 0.6875rem;
+    color: #4A4A4A;
+    white-space: nowrap;
+  }
+
+  /* Gargalo card */
+  .calibragem-card--gargalo {
+    border-color: rgba(239,68,68,0.12);
+  }
+  .gargalo-hint {
+    font-size: 0.75rem;
+    color: #4A4A4A;
+    margin-bottom: 12px;
+  }
+
   /* Upsell */
+
   .upsell-section {
     margin-top: 60px;
   }
@@ -335,15 +904,14 @@ import AppLayout from '@/layouts/AppLayout.astro';
     border-radius: 8px;
     overflow: hidden;
     flex-shrink: 0;
+    background-color: #111;
   }
   .course-img {
     width: 100%;
     height: 100%;
     object-fit: cover;
   }
-  .upsell-info {
-    flex-grow: 1;
-  }
+  .upsell-info { flex-grow: 1; }
   .upsell-title {
     font-family: 'Playfair Display', serif;
     font-size: 1.25rem;
@@ -370,7 +938,5 @@ import AppLayout from '@/layouts/AppLayout.astro';
     letter-spacing: 0.05em;
     transition: background-color 200ms ease;
   }
-  .btn-upsell:hover {
-    background-color: #F5F5F5;
-  }
+  .btn-upsell:hover { background-color: #F5F5F5; }
 </style>

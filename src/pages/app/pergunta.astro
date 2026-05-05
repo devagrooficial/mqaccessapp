@@ -1,220 +1,676 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+
+const user     = Astro.locals.user;
+const supabase = Astro.locals.supabase; // ← cliente SSR com cookies do request (passa no RLS)
+if (!user) return Astro.redirect('/auth/login');
+
+// ── GET: Busca ou cria assessment para o usuário ─────────────────────────────
+// Tabela egogram_assessments possui apenas: id, user_id, created_at
+// Busca o assessment mais recente do usuário nas últimas 4h
+const fourHoursAgo = new Date(Date.now() - 4 * 60 * 60 * 1000).toISOString();
+
+const { data: existingAssessment, error: existingError } = await supabase
+  .from('egogram_assessments')
+  .select('id')
+  .eq('user_id', user.id)
+  .gte('created_at', fourHoursAgo)
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+if (existingError) {
+  console.error('[EGOGRAMA GET] ❌ Erro ao buscar assessment existente:', existingError);
+}
+
+let assessmentId: string | null = existingAssessment?.id ?? null;
+
+// Se não existe um recente, cria um novo (apenas user_id — sem coluna status)
+if (!assessmentId) {
+  const { data: newAssessment, error: createError } = await supabase
+    .from('egogram_assessments')
+    .insert({ user_id: user.id })
+    .select('id')
+    .single();
+
+  if (createError) {
+    console.error('[EGOGRAMA GET] ❌ Erro ao criar assessment:', createError);
+  } else {
+    assessmentId = newAssessment?.id ?? null;
+    console.log(`✅ [EGOGRAMA GET] Novo assessment criado: ${assessmentId}`);
+  }
+} else {
+  console.log(`♻️ [EGOGRAMA GET] Reaproveitando assessment recente: ${assessmentId}`);
+}
+
+// ── Busca respostas já salvas para pré-selecionar no wizard ─────────────────
+let savedAnswers: Record<string, number> = {};
+if (assessmentId) {
+  const { data: existing } = await supabase
+    .from('egogram_answers')
+    .select('question_id, resposta')
+    .eq('assessment_id', assessmentId);
+
+  if (existing) {
+    for (const row of existing) {
+      savedAnswers[row.question_id] = row.resposta;
+    }
+  }
+}
+
+// ── Busca perguntas ──────────────────────────────────────────────────────────
+const { data: questions, error: questionsError } = await supabase
+  .from('egogram_questions')
+  .select('*')
+  .order('sequencia', { ascending: true });
+
+console.log('🔍 [DEBUG] Erro:', questionsError);
+console.log('📦 [DEBUG] Total perguntas:', questions?.length ?? 0);
+
+const totalQuestions = questions?.length ?? 0;
+
+const getTexto = (q: any): string =>
+  q.titulo ?? q.texto ?? q.enunciado ?? q.pergunta ?? q.question ?? '(sem texto)';
 ---
 
-<AppLayout title="Avaliação - Passo 1" activeNav="analises">
-  <div class="question-page">
+<AppLayout title="Avaliação — Egograma" activeNav="analises">
+  <div
+    class="wizard-page"
+    id="wizard-root"
+    data-assessment-id={assessmentId ?? ''}
+    data-total={totalQuestions}
+  >
 
-    <!-- Indicador de Progresso -->
-    <div class="progress-container">
-      <div class="progress-bar">
-        <div class="progress-fill" style="width: 33%;"></div>
+    {questions && questions.length > 0 ? (
+      <>
+        <!-- ── Header fixo com progresso ── -->
+        <div class="wizard-header">
+          <div class="wizard-header__top">
+            <a href="/app/analise-detalhes" class="wizard-cancel" title="Cancelar avaliação">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+              Sair
+            </a>
+            <span class="wizard-counter">
+              <span id="js-step">1</span> / {totalQuestions}
+            </span>
+          </div>
+          <div class="wizard-progress-bar">
+            <div class="wizard-progress-fill" id="js-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- ── Steps (1 por tela) ── -->
+        <div class="wizard-steps" id="js-steps">
+          {questions.map((q: any, index: number) => {
+            const savedValue = savedAnswers[q.id];
+            const hasSaved   = savedValue !== undefined;
+            return (
+              <div
+                class="wizard-step"
+                data-step={index + 1}
+                data-question-id={q.id}
+                data-tipo={q.tipo}
+                id={`step-${index + 1}`}
+                aria-hidden={index !== 0 ? 'true' : 'false'}
+                style={index !== 0 ? 'display:none;' : ''}
+              >
+                <div class="step-eyebrow">
+                  <span class="step-type">{q.tipo ?? '—'}</span>
+                  {hasSaved && (
+                    <span class="step-saved-badge" id={`saved-${index + 1}`}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Salvo
+                    </span>
+                  )}
+                </div>
+
+                <h1 class="step-question">
+                  <span class="step-num">{String(index + 1).padStart(2, '0')}.</span>
+                  {getTexto(q)}
+                </h1>
+
+                <div class="step-options" role="radiogroup" aria-label={`Pergunta ${index + 1} de ${totalQuestions}`}>
+                  {[
+                    { label: 'Nunca',           value: 0 },
+                    { label: 'Às vezes',        value: 1 },
+                    { label: 'Frequentemente',  value: 2 },
+                    { label: 'Sempre',          value: 3 },
+                  ].map((opt) => {
+                    const isChecked = hasSaved && savedValue === opt.value;
+                    return (
+                      <label class={`step-option${isChecked ? ' step-option--selected' : ''}`} data-value={opt.value}>
+                        <input
+                          type="radio"
+                          name={`answer_${q.id}`}
+                          value={opt.value}
+                          class="step-radio"
+                          checked={isChecked}
+                        />
+                        <div class="step-option__dot"></div>
+                        <span class="step-option__label">{opt.label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
+
+                <!-- Status de salvamento por pergunta -->
+                <div class="step-status" id={`status-${index + 1}`} aria-live="polite"></div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- ── Controles de navegação ── -->
+        <div class="wizard-nav" id="js-nav">
+          <button type="button" id="js-prev" class="wizard-btn wizard-btn--outline" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Anterior
+          </button>
+
+          <button type="button" id="js-next" class="wizard-btn wizard-btn--ghost">
+            Próxima
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+
+          <!-- Botão final: href direto, dados já estão no banco -->
+          <a
+            id="js-submit"
+            href={`/app/relatorio?id=${assessmentId}`}
+            class="wizard-btn wizard-btn--gold"
+            style="display:none; text-decoration:none;"
+            aria-disabled="true"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Gerar Relatório
+          </a>
+        </div>
+      </>
+    ) : (
+      <div class="wizard-empty">
+        <p>Nenhuma pergunta encontrada.<br/>Verifique o banco de dados ou as políticas RLS.</p>
       </div>
-      <p class="progress-text">Passo 1 de 3</p>
-    </div>
-
-    <!-- Pergunta -->
-    <div class="question-container">
-      <h1 class="question-title">
-        Em reuniões de alta pressão, como você costuma reagir a críticas diretas?
-      </h1>
-
-      <!-- Opções -->
-      <div class="options-grid">
-        <!-- Option 1 -->
-        <label class="option-card">
-          <input type="radio" name="answer" class="option-radio sr-only" />
-          <div class="option-custom-radio"></div>
-          <span class="option-text">Tento manter a calma e peço dados concretos que embasem a crítica.</span>
-        </label>
-        <!-- Option 2 -->
-        <label class="option-card">
-          <input type="radio" name="answer" class="option-radio sr-only" />
-          <div class="option-custom-radio"></div>
-          <span class="option-text">Respondo na mesma intensidade para garantir o controle da narrativa.</span>
-        </label>
-        <!-- Option 3 -->
-        <label class="option-card">
-          <input type="radio" name="answer" class="option-radio sr-only" />
-          <div class="option-custom-radio"></div>
-          <span class="option-text">Busco desviar o foco ou apaziguar os ânimos rapidamente para evitar atrito.</span>
-        </label>
-        <!-- Option 4 -->
-        <label class="option-card">
-          <input type="radio" name="answer" class="option-radio sr-only" />
-          <div class="option-custom-radio"></div>
-          <span class="option-text">Defendo firmemente minha equipe e assumo a responsabilidade imediatamente.</span>
-        </label>
-      </div>
-    </div>
-
-    <!-- Navegação -->
-    <div class="question-footer">
-      <a href="/app/analise-detalhes" class="btn-nav btn-outline">Anterior</a>
-      <a href="/app/relatorio" class="btn-nav btn-solid">Finalizar</a>
-    </div>
+    )}
 
   </div>
 </AppLayout>
 
+<script define:vars={{ assessmentId, totalQuestions }}>
+  // Valores SSR injetados — disponíveis imediatamente, sem leitura de DOM
+  var ASSESSMENT_ID = assessmentId || '';
+  var TOTAL         = totalQuestions || 0;
+
+  function initWizard() {
+    console.log('🚀 [WIZARD] initWizard() executado!');
+    console.log('🔑 [WIZARD] assessment_id:', ASSESSMENT_ID || '⚠ VAZIO');
+    console.log('📊 [WIZARD] total perguntas:', TOTAL);
+
+    if (!ASSESSMENT_ID) {
+      console.error('❌ [WIZARD] assessment_id VAZIO — INSERT no SSR falhou. Verifique RLS da tabela egogram_assessments.');
+    }
+
+    // Referências DOM
+    var fill           = document.getElementById('js-fill');
+    var stepLabel      = document.getElementById('js-step');
+    var prevBtn        = document.getElementById('js-prev');
+    var nextBtn        = document.getElementById('js-next');
+    var submitBtn      = document.getElementById('js-submit');
+    var stepsContainer = document.getElementById('js-steps');
+
+    if (!stepsContainer) {
+      console.error('[WIZARD] ❌ #js-steps não encontrado no DOM — abortando.');
+      return;
+    }
+
+    console.log('[WIZARD] DOM encontrado:', {
+      fill: !!fill, stepLabel: !!stepLabel, prevBtn: !!prevBtn,
+      nextBtn: !!nextBtn, submitBtn: !!submitBtn, stepsContainer: !!stepsContainer
+    });
+
+    // Estado
+    var currentStep   = 1;
+    var answeredSteps = {};  // { "1": true, "3": true, ... }
+
+    // Pré-carrega steps já respondidos (vindos do servidor via checked)
+    stepsContainer.querySelectorAll('input[type="radio"]:checked').forEach(function(inp) {
+      var se = inp.closest('.wizard-step');
+      if (se && se.dataset.step) answeredSteps[se.dataset.step] = true;
+    });
+
+    // ── Utilitários ────────────────────────────────────────────────────────────
+    function getStepEl(n) {
+      return document.getElementById('step-' + n);
+    }
+
+    function hasAnsweredStep(n) {
+      var el = getStepEl(n);
+      return !!(el && el.querySelector('input[type="radio"]:checked'));
+    }
+
+    function updateUI() {
+      var isLast   = currentStep === TOTAL;
+      var isFirst  = currentStep === 1;
+      var answered = hasAnsweredStep(currentStep);
+      var count    = Object.keys(answeredSteps).length;
+      var pct      = TOTAL > 0 ? (count / TOTAL) * 100 : 0;
+
+      if (fill)      fill.style.width     = pct + '%';
+      if (stepLabel) stepLabel.textContent = String(currentStep);
+      if (prevBtn)   prevBtn.disabled      = isFirst;
+
+      if (isLast) {
+        if (nextBtn)   nextBtn.style.display  = 'none';
+        if (submitBtn) submitBtn.style.display = 'flex';
+        if (submitBtn) {
+          submitBtn.style.opacity       = answered ? '1'    : '0.4';
+          submitBtn.style.pointerEvents = answered ? 'auto' : 'none';
+          if (answered) submitBtn.removeAttribute('aria-disabled');
+          else          submitBtn.setAttribute('aria-disabled', 'true');
+        }
+      } else {
+        if (nextBtn)   nextBtn.style.display  = 'flex';
+        if (submitBtn) submitBtn.style.display = 'none';
+      }
+    }
+
+    function showStep(n, direction) {
+      var current = getStepEl(currentStep);
+      var next    = getStepEl(n);
+      if (!current || !next) { console.warn('[WIZARD] step não encontrado:', n); return; }
+
+      current.style.display = 'none';
+      current.setAttribute('aria-hidden', 'true');
+
+      next.style.opacity   = '0';
+      next.style.transform = direction > 0 ? 'translateX(24px)' : 'translateX(-24px)';
+      next.style.display   = 'flex';
+      next.setAttribute('aria-hidden', 'false');
+
+      requestAnimationFrame(function() {
+        next.style.transition = 'opacity 280ms ease, transform 280ms ease';
+        next.style.opacity    = '1';
+        next.style.transform  = 'translateX(0)';
+      });
+
+      currentStep = n;
+      updateUI();
+    }
+
+    // ── Auto-save ──────────────────────────────────────────────────────────────
+    function saveAnswer(questionId, tipo, resposta, stepN) {
+      var statusEl = document.getElementById('status-' + stepN);
+      var badgeEl  = document.getElementById('saved-'  + stepN);
+
+      if (statusEl) { statusEl.textContent = '…'; statusEl.className = 'step-status step-status--saving'; }
+
+      console.log('[WIZARD] 💾 Payload:', { assessment_id: ASSESSMENT_ID, question_id: questionId, tipo: tipo, resposta: resposta });
+
+      fetch('/api/egograma/save-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessment_id: ASSESSMENT_ID, question_id: questionId, tipo: tipo, resposta: resposta }),
+      })
+      .then(function(res) {
+        return res.json().then(function(json) { return { ok: res.ok, json: json }; });
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error(r.json.error || 'Erro desconhecido');
+        console.log('[WIZARD] ✅ Salvo! step', stepN);
+        answeredSteps[String(stepN)] = true;
+        updateUI();
+        if (statusEl) {
+          statusEl.textContent = '✓ Salvo';
+          statusEl.className   = 'step-status step-status--ok';
+          setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 2000);
+        }
+        // Badge "Salvo"
+        if (badgeEl) {
+          badgeEl.style.display = 'inline-flex';
+        } else {
+          var eyeEl = getStepEl(stepN);
+          var eyebrow = eyeEl && eyeEl.querySelector('.step-eyebrow');
+          if (eyebrow) {
+            var badge = document.createElement('span');
+            badge.className = 'step-saved-badge';
+            badge.id        = 'saved-' + stepN;
+            badge.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Salvo';
+            eyebrow.appendChild(badge);
+          }
+        }
+      })
+      .catch(function(err) {
+        console.error('[WIZARD] ❌ save-answer falhou:', err.message);
+        if (statusEl) { statusEl.textContent = '⚠ Falha'; statusEl.className = 'step-status step-status--error'; }
+      });
+    }
+
+    // ── Event Delegation — um listener cobre todos os 200 inputs ──────────────
+    stepsContainer.addEventListener('change', function(event) {
+      var input = event.target;
+      if (!input || input.tagName !== 'INPUT' || input.type !== 'radio') return;
+
+      console.log('🔘 [WIZARD] Radio change — value:', input.value, '| name:', input.name);
+
+      var label  = input.closest('.step-option');
+      var stepEl = input.closest('.wizard-step');
+
+      if (!label || !stepEl) {
+        console.warn('[WIZARD] .step-option ou .wizard-step não encontrado');
+        return;
+      }
+
+      // Destaca opção
+      var group = label.closest('.step-options');
+      if (group) group.querySelectorAll('.step-option').forEach(function(l) { l.classList.remove('step-option--selected'); });
+      label.classList.add('step-option--selected');
+
+      var stepN      = parseInt(stepEl.dataset.step       || '0', 10);
+      var questionId = stepEl.dataset.questionId          || '';
+      var tipo       = stepEl.dataset.tipo                || '';
+      var resposta   = parseInt(input.value, 10);
+
+      console.log('[WIZARD] 📋 step:', stepN, '| questionId:', questionId, '| tipo:', tipo, '| resposta:', resposta);
+
+      saveAnswer(questionId, tipo, resposta, stepN);
+
+      // Auto-avanço
+      if (currentStep < TOTAL) {
+        setTimeout(function() { showStep(currentStep + 1, 1); }, 300);
+      }
+    });
+
+    // ── Botões Anterior / Próxima ──────────────────────────────────────────────
+    if (prevBtn) prevBtn.addEventListener('click', function() { if (currentStep > 1) showStep(currentStep - 1, -1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { if (currentStep < TOTAL) showStep(currentStep + 1, 1); });
+
+    // ── Botão "Gerar Relatório" ────────────────────────────────────────────────
+    // É um <a> tag — só redireciona, não faz form submit.
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (!ASSESSMENT_ID) {
+          console.error('[WIZARD] ❌ Sem assessment_id — não é possível gerar relatório.');
+          return;
+        }
+        console.log('[WIZARD] 🚀 Redirecionando para relatório, id:', ASSESSMENT_ID);
+        window.location.href = '/app/relatorio?id=' + ASSESSMENT_ID;
+      });
+    }
+
+    console.log('✅ [WIZARD] Pronto! Event delegation ativo em #js-steps.');
+    updateUI();
+  }
+
+  // Garante execução após DOM pronto (cobre View Transitions do Astro)
+  document.addEventListener('DOMContentLoaded', initWizard);
+  document.addEventListener('astro:page-load', initWizard);
+</script>
+
+
 <style>
-  .question-page {
-    padding: 24px 16px 80px; /* bottom padding for footer */
-    max-width: 640px;
-    margin: 0 auto;
-    font-family: 'Inter', sans-serif;
-    min-height: calc(100vh - 80px);
+  .wizard-page {
+    min-height: 100dvh;
     display: flex;
     flex-direction: column;
+    background-color: #000;
+    font-family: 'Inter', sans-serif;
   }
 
-  /* Progresso */
-  .progress-container {
-    margin-bottom: 40px;
+  /* ── Header ── */
+  .wizard-header {
+    position: sticky;
+    top: 0;
+    z-index: 20;
+    background-color: #000;
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
   }
-  .progress-bar {
+  .wizard-header__top {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 12px;
+  }
+  .wizard-cancel {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.75rem;
+    color: #4A4A4A;
+    text-decoration: none;
+    transition: color 200ms ease;
+  }
+  .wizard-cancel:hover { color: #D4AF37; }
+  .wizard-counter {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #4A4A4A;
+  }
+  .wizard-progress-bar {
     width: 100%;
-    height: 4px;
+    height: 3px;
     background-color: rgba(255,255,255,0.05);
-    border-radius: 2px;
-    margin-bottom: 8px;
+    border-radius: 3px;
     overflow: hidden;
   }
-  .progress-fill {
+  .wizard-progress-fill {
     height: 100%;
-    background-color: #D4AF37;
-    border-radius: 2px;
-    transition: width 300ms ease;
-  }
-  .progress-text {
-    font-size: 0.75rem;
-    color: #5A5A5A;
-    text-transform: uppercase;
-    letter-spacing: 0.1em;
+    background: linear-gradient(90deg, #8C6D3F, #D4AF37);
+    border-radius: 3px;
+    transition: width 400ms cubic-bezier(0.4, 0, 0.2, 1);
   }
 
-  /* Pergunta */
-  .question-container {
-    flex-grow: 1;
+  /* ── Steps ── */
+  .wizard-steps {
+    flex: 1;
+    display: flex;
+    align-items: stretch;
   }
-  .question-title {
+  .wizard-step {
+    width: 100%;
+    flex-direction: column;
+    justify-content: center;
+    padding: 40px 24px 24px;
+    max-width: 620px;
+    margin: 0 auto;
+    will-change: opacity, transform;
+  }
+
+  /* ── Eyebrow ── */
+  .step-eyebrow {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 20px;
+  }
+  .step-type {
+    display: inline-block;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 4px;
+    background: rgba(212,175,55,0.08);
+    border: 1px solid rgba(212,175,55,0.18);
+    color: #D4AF37;
+  }
+  .step-saved-badge {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.08em;
+    color: #4ade80;
+    text-transform: uppercase;
+    opacity: 0.7;
+  }
+
+  /* ── Pergunta ── */
+  .step-question {
     font-family: 'Playfair Display', serif;
-    font-size: 1.75rem;
+    font-size: clamp(1.25rem, 4vw, 1.75rem);
     font-weight: 700;
     color: #F5F5F5;
-    line-height: 1.3;
-    margin-bottom: 32px;
+    line-height: 1.35;
+    margin-bottom: 36px;
+  }
+  .step-num {
+    color: #D4AF37;
+    opacity: 0.4;
+    margin-right: 8px;
+    font-size: 0.875em;
   }
 
-  /* Opções */
-  .options-grid {
+  /* ── Opções ── */
+  .step-options {
     display: flex;
     flex-direction: column;
-    gap: 12px;
+    gap: 10px;
   }
-  
-  .option-card {
+  .step-option {
     display: flex;
-    align-items: flex-start;
+    align-items: center;
     gap: 16px;
     background-color: #0A0A0A;
-    border: 1px solid rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
     border-radius: 12px;
-    padding: 20px;
+    padding: 16px 20px;
     cursor: pointer;
-    transition: all 200ms ease;
+    transition: border-color 200ms ease, background-color 200ms ease;
   }
-  .option-card:hover {
+  .step-option:hover {
+    border-color: rgba(212,175,55,0.4);
+    background-color: rgba(212,175,55,0.04);
+  }
+  .step-option--selected {
     border-color: #D4AF37;
-    background-color: rgba(212, 175, 55, 0.05);
+    background-color: rgba(212,175,55,0.09);
   }
-
-  .sr-only {
+  .step-radio {
     position: absolute;
-    width: 1px;
-    height: 1px;
-    padding: 0;
-    margin: -1px;
-    overflow: hidden;
-    clip: rect(0, 0, 0, 0);
-    white-space: nowrap;
-    border-width: 0;
+    opacity: 0;
+    width: 0;
+    height: 0;
+    pointer-events: none;
   }
-
-  .option-custom-radio {
+  .step-option__dot {
     width: 20px;
     height: 20px;
     border-radius: 50%;
-    border: 2px solid #4A4A4A;
+    border: 2px solid #3A3A3A;
     flex-shrink: 0;
-    margin-top: 2px;
-    transition: all 200ms ease;
     position: relative;
+    transition: border-color 200ms ease;
   }
-  
-  /* Estado Checked */
-  .option-radio:checked + .option-custom-radio {
+  .step-option--selected .step-option__dot {
     border-color: #D4AF37;
   }
-  .option-radio:checked + .option-custom-radio::after {
+  .step-option--selected .step-option__dot::after {
     content: '';
     position: absolute;
-    top: 50%;
-    left: 50%;
-    transform: translate(-50%, -50%);
-    width: 10px;
-    height: 10px;
+    inset: 3px;
     border-radius: 50%;
     background-color: #D4AF37;
   }
-
-  .option-text {
+  .step-option__label {
     font-size: 0.9375rem;
-    line-height: 1.5;
+    font-weight: 500;
     color: #A0A0A0;
     transition: color 200ms ease;
   }
-  .option-card:hover .option-text {
-    color: #F5F5F5;
-  }
-  .option-radio:checked ~ .option-text {
-    color: #F5F5F5;
-  }
+  .step-option--selected .step-option__label,
+  .step-option:hover .step-option__label { color: #F5F5F5; }
 
-  /* Rodapé / Navegação */
-  .question-footer {
-    display: flex;
-    gap: 16px;
-    margin-top: 40px;
+  /* ── Status de salvamento ── */
+  .step-status {
+    margin-top: 12px;
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    min-height: 16px;
+    transition: color 200ms ease;
   }
-  .btn-nav {
+  .step-status--saving { color: #4A4A4A; }
+  .step-status--ok     { color: #4ade80; }
+  .step-status--error  { color: #f87171; }
+
+  /* ── Navegação ── */
+  .wizard-nav {
+    display: flex;
+    gap: 12px;
+    padding: 20px 24px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    background-color: #000;
+    position: sticky;
+    bottom: 0;
+    z-index: 20;
+  }
+  .wizard-btn {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    height: 48px;
+    padding: 0 20px;
+    border-radius: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 600;
+    cursor: pointer;
+    border: none;
+    transition: background-color 200ms ease, border-color 200ms ease, color 200ms ease;
+    flex-shrink: 0;
+  }
+  .wizard-btn--outline {
+    background: transparent;
+    border: 1px solid rgba(255,255,255,0.08);
+    color: #5A5A5A;
+  }
+  .wizard-btn--outline:hover:not(:disabled) {
+    border-color: rgba(255,255,255,0.25);
+    color: #A0A0A0;
+  }
+  .wizard-btn--outline:disabled { opacity: 0.3; cursor: not-allowed; }
+  .wizard-btn--ghost {
     flex: 1;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: #F5F5F5;
+  }
+  .wizard-btn--ghost:hover { background: rgba(255,255,255,0.08); }
+  .wizard-btn--gold {
+    flex: 1;
+    background-color: #D4AF37;
+    color: #000;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+  }
+  .wizard-btn--gold:hover { background-color: #E8D5A3; }
+
+  /* ── Empty ── */
+  .wizard-empty {
     display: flex;
     align-items: center;
     justify-content: center;
-    height: 48px;
-    border-radius: 8px;
+    min-height: 60vh;
+    text-align: center;
     font-size: 0.875rem;
-    font-weight: 600;
-    text-decoration: none;
-    transition: all 200ms ease;
-  }
-  .btn-outline {
-    background-color: transparent;
-    border: 1px solid rgba(255,255,255,0.1);
-    color: #A0A0A0;
-  }
-  .btn-outline:hover {
-    border-color: rgba(255,255,255,0.3);
-    color: #F5F5F5;
-  }
-  .btn-solid {
-    background-color: #D4AF37;
-    border: 1px solid #D4AF37;
-    color: #000;
-  }
-  .btn-solid:hover {
-    background-color: #F5F5F5;
-    border-color: #F5F5F5;
+    color: #4A4A4A;
+    line-height: 1.6;
+    padding: 24px;
   }
 </style>

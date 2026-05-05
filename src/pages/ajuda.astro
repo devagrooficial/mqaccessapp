@@ -1,0 +1,270 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+
+const faqs = [
+  {
+    q: 'Como faço para alterar meu e-mail de acesso?',
+    a: 'Por questões de segurança e integridade da sua conta, o e-mail de cadastro é a sua chave única e não pode ser alterado diretamente pelo painel. Caso tenha perdido o acesso ao e-mail original, entre em contato com nosso suporte para verificação de identidade.',
+  },
+  {
+    q: 'Onde encontro os materiais complementares das aulas?',
+    a: 'Todos os PDFs, planilhas e mapas mentais ficam disponíveis diretamente na página de reprodução (Player) de cada aula. Você também pode salvar suas aulas preferidas e acessá-las rapidamente pela aba "Favoritos" no seu Perfil.',
+  },
+  {
+    q: 'Como funciona o comissionamento do Link de Afiliação?',
+    a: 'Na aba "Link de Afiliação", você possui uma URL exclusiva. Quando um novo membro se cadastra e assina a plataforma através do seu link, a comissão é atrelada automaticamente ao seu perfil. Você pode acompanhar os cliques e ganhos naquele mesmo painel.',
+  },
+  {
+    q: 'Como posso renovar ou alterar os dados da minha assinatura?',
+    a: 'A gestão financeira (troca de cartão, histórico de faturas e renovação) é feita através do gateway de pagamento utilizado no momento da compra (Stripe/Kiwify). Acesse o e-mail recebido no momento da compra para gerenciar sua assinatura.',
+  },
+  {
+    q: 'Não encontrei o que precisava. Como falo com um humano?',
+    a: 'Estamos aqui para garantir que sua experiência seja impecável. Acesse a aba "Suporte" no menu do seu perfil para abrir um ticket direto com a nossa equipe de Customer Success.',
+    cta: { label: 'Ir para Suporte', href: '/suporte' },
+  },
+];
+---
+
+<AppLayout title="Central de Ajuda">
+  <div class="ajuda-page">
+
+    <!-- HEADER -->
+    <header class="ajuda-header">
+      <a href="/app/perfil" class="ajuda-back-btn" aria-label="Voltar para Perfil">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <h1 class="ajuda-title">Central de Ajuda</h1>
+    </header>
+
+    <!-- CARD FAQ -->
+    <div class="ajuda-card">
+
+      <p class="ajuda-intro">Respostas rápidas para as dúvidas mais comuns da nossa comunidade.</p>
+
+      <ol class="faq-list">
+        {faqs.map((faq, i) => (
+          <li class={`faq-item ${i === faqs.length - 1 ? 'faq-item--last' : ''}`}>
+            <!-- Número + Pergunta -->
+            <div class="faq-q-row">
+              <span class="faq-num">{String(i + 1).padStart(2, '0')}</span>
+              <h3 class="faq-q">{faq.q}</h3>
+            </div>
+            <!-- Resposta -->
+            <p class="faq-a">{faq.a}</p>
+            <!-- CTA opcional (última pergunta) -->
+            {faq.cta && (
+              <a href={faq.cta.href} class="faq-cta">
+                {faq.cta.label}
+                <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+              </a>
+            )}
+          </li>
+        ))}
+      </ol>
+
+      <!-- RODAPÉ -->
+      <div class="ajuda-footer">
+        <div class="ajuda-footer__icon">
+          <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        </div>
+        <div>
+          <p class="ajuda-footer__title">Ainda tem dúvidas?</p>
+          <p class="ajuda-footer__text">Nossa equipe de suporte está disponível para te ajudar diretamente.</p>
+          <a href="/suporte" class="ajuda-footer__link">Abrir um chamado →</a>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</AppLayout>
+
+<style>
+  /* ── Container ── */
+  .ajuda-page {
+    padding: 24px 16px 48px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .ajuda-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .ajuda-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.5);
+    transition: background-color 200ms ease, color 200ms ease;
+    flex-shrink: 0;
+  }
+  .ajuda-back-btn:hover {
+    background-color: rgba(255,255,255,0.1);
+    color: #ffffff;
+  }
+
+  .ajuda-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.2;
+  }
+
+  /* ── Card ── */
+  .ajuda-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 32px 24px;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Intro ── */
+  .ajuda-intro {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.4);
+    line-height: 1.6;
+    margin-bottom: 32px;
+    padding-bottom: 28px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+
+  /* ── FAQ List ── */
+  .faq-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── FAQ Item ── */
+  .faq-item {
+    padding-bottom: 28px;
+    margin-bottom: 28px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+
+  .faq-item--last {
+    border-bottom: none;
+    padding-bottom: 0;
+    margin-bottom: 0;
+  }
+
+  /* Linha Q: número + pergunta */
+  .faq-q-row {
+    display: flex;
+    align-items: baseline;
+    gap: 14px;
+  }
+
+  .faq-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: rgba(212,175,55,0.3);
+    flex-shrink: 0;
+    line-height: 1;
+  }
+
+  .faq-q {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.0625rem;
+    font-weight: 700;
+    color: #F0F0F0;
+    line-height: 1.4;
+    letter-spacing: 0.01em;
+  }
+
+  /* Resposta */
+  .faq-a {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.5);
+    line-height: 1.75;
+    padding-left: 30px; /* alinha com o texto da pergunta (após o número) */
+  }
+
+  /* CTA inline */
+  .faq-cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-left: 30px;
+    margin-top: 4px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #D4AF37;
+    transition: color 200ms ease, gap 200ms ease;
+  }
+  .faq-cta:hover {
+    color: #ffffff;
+    gap: 10px;
+  }
+
+  /* ── Rodapé do Card ── */
+  .ajuda-footer {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    margin-top: 36px;
+    padding: 20px;
+    background-color: rgba(255,255,255,0.02);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 14px;
+  }
+
+  .ajuda-footer__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
+    background-color: rgba(212,175,55,0.08);
+    color: rgba(212,175,55,0.5);
+    flex-shrink: 0;
+  }
+
+  .ajuda-footer__title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.7);
+    margin-bottom: 4px;
+  }
+
+  .ajuda-footer__text {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    color: rgba(255,255,255,0.3);
+    line-height: 1.5;
+    margin-bottom: 10px;
+  }
+
+  .ajuda-footer__link {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #D4AF37;
+    transition: color 200ms ease;
+  }
+  .ajuda-footer__link:hover {
+    color: #ffffff;
+  }
+</style>

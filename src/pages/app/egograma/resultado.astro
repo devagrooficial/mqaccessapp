@@ -1,0 +1,540 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+import { supabase } from '@/lib/supabase';
+
+const user = Astro.locals.user;
+if (!user) return Astro.redirect('/auth/login');
+
+// ── Captura e valida o assessment_id ────────────────────────────────────────
+const assessmentId = Astro.url.searchParams.get('id');
+if (!assessmentId) return Astro.redirect('/app/analises');
+
+// Busca o assessment e valida ownership
+const { data: assessment, error: assessmentError } = await supabase
+  .from('egogram_assessments')
+  .select('id, user_id, status, completed_at')
+  .eq('id', assessmentId)
+  .eq('user_id', user.id)
+  .single();
+
+if (assessmentError || !assessment) return Astro.redirect('/app/analises');
+
+// ── Busca e agrega as respostas ──────────────────────────────────────────────
+const { data: answers } = await supabase
+  .from('egogram_answers')
+  .select('tipo, resposta')
+  .eq('assessment_id', assessmentId);
+
+// Agrupa e soma por tipo: PC, PA, A, CL, CA
+const scores: Record<string, number> = { PC: 0, PA: 0, A: 0, CL: 0, CA: 0 };
+if (answers) {
+  for (const row of answers) {
+    const tipo = String(row.tipo).toUpperCase();
+    if (tipo in scores) scores[tipo] += Number(row.resposta ?? 0);
+  }
+}
+
+const soma_PC = scores.PC;
+const soma_PA = scores.PA;
+const soma_A  = scores.A;
+const soma_CL = scores.CL;
+const soma_CA = scores.CA;
+
+// Identifica o estado dominante
+const stateEntries = [
+  { key: 'PC', label: 'Pai Crítico',     score: soma_PC },
+  { key: 'PA', label: 'Pai Nutritivo',   score: soma_PA },
+  { key: 'A',  label: 'Adulto',          score: soma_A  },
+  { key: 'CL', label: 'Criança Livre',   score: soma_CL },
+  { key: 'CA', label: 'Criança Adaptada',score: soma_CA },
+];
+const dominant = stateEntries.reduce((a, b) => (b.score > a.score ? b : a));
+
+// Formata data
+const completedDate = assessment.completed_at
+  ? new Date(assessment.completed_at).toLocaleDateString('pt-BR', {
+      day: '2-digit', month: 'long', year: 'numeric',
+    })
+  : '—';
+
+// Dados para o chart (injetados no cliente via JSON)
+const chartData = JSON.stringify({
+  labels: ['Pai Crítico', 'Pai Nutritivo', 'Adulto', 'Criança Livre', 'Criança Adaptada'],
+  scores: [soma_PC, soma_PA, soma_A, soma_CL, soma_CA],
+});
+
+// Definição dos 5 estados
+const stateCards = [
+  {
+    key: 'PC',
+    emoji: '⚖️',
+    title: 'Pai Crítico',
+    score: soma_PC,
+    high: 'Alta estrutura e exigência. Estabelece padrões elevados e mantém limites firmes — essencial em liderança e compliance. Pode tendenciar ao controle excessivo quando desequilibrado.',
+    low:  'Baixa presença de regras pessoais. Pode indicar dificuldade em manter limites nas relações profissionais.',
+  },
+  {
+    key: 'PA',
+    emoji: '🤝',
+    title: 'Pai Nutritivo',
+    score: soma_PA,
+    high: 'Alta empatia e desenvolvimento de pessoas. Forte perfil de mentoria e liderança servidora. Cuidado: pode gerar dependência ou sacrifício dos próprios limites.',
+    low:  'Pouca ênfase em suporte emocional. Perfil mais objetivo e focado em resultado do que em relação.',
+  },
+  {
+    key: 'A',
+    emoji: '🎯',
+    title: 'Adulto',
+    score: soma_A,
+    high: 'Alta racionalidade e pensamento estratégico. Toma decisões com base em dados e análise. Âncora da tomada de decisão equilibrada — o estado ideal para negociações críticas.',
+    low:  'Decisões podem ser mais influenciadas por emoção ou padrões herdados do que por análise objetiva da situação.',
+  },
+  {
+    key: 'CL',
+    emoji: '✨',
+    title: 'Criança Livre',
+    score: soma_CL,
+    high: 'Alta criatividade, espontaneidade e intuição. Forte em inovação e pensamento lateral. Em excesso, pode comprometer a seriedade percebida em contextos formais.',
+    low:  'Pouco espaço para espontaneidade. Perfil altamente estruturado — pode limitar a criatividade e a conexão emocional autêntica.',
+  },
+  {
+    key: 'CA',
+    emoji: '🔄',
+    title: 'Criança Adaptada',
+    score: soma_CA,
+    high: 'Alta conformidade ou rebeldia (dois polos do mesmo estado). Indica forte influência de figuras de autoridade externas nas suas decisões. Pode gerar complacência ou resistência automática.',
+    low:  'Pouca influência de padrões externos. Maior autonomia e autogestão nas respostas comportamentais.',
+  },
+];
+---
+
+<AppLayout title="Resultado do Egograma — MQ ACCESS" activeNav="home">
+  <div class="result-page">
+
+    <!-- Header -->
+    <header class="result-header">
+      <a href="/app/analises" class="result-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M19 12H5M12 19l-7-7 7-7"/>
+        </svg>
+        Minhas Análises
+      </a>
+      <span class="result-date">{completedDate}</span>
+    </header>
+
+    <!-- Hero Result -->
+    <section class="result-hero">
+      <div class="result-hero__badge">RESULTADO — EGOGRAMA</div>
+      <h1 class="result-hero__title">Mapeamento dos<br/>Estados de Ego</h1>
+      <div class="result-dominant">
+        <span class="result-dominant__label">Estado Dominante</span>
+        <span class="result-dominant__value">{dominant.label}</span>
+        <span class="result-dominant__score">{dominant.score} / 30 pts</span>
+      </div>
+    </section>
+
+    <!-- Gráfico -->
+    <section class="result-chart-section">
+      <h2 class="result-section-title">Perfil Comportamental</h2>
+      <div class="result-chart-wrap">
+        <canvas id="egoRadarChart" width="400" height="400" aria-label="Gráfico de radar do Egograma"></canvas>
+      </div>
+
+      <!-- Scores em lista compacta -->
+      <div class="result-scores">
+        {stateEntries.map((s) => (
+          <div class="result-score-row">
+            <span class="result-score-row__label">{s.label}</span>
+            <div class="result-score-row__bar-wrap">
+              <div class="result-score-row__bar">
+                <div
+                  class="result-score-row__fill"
+                  style={`width: ${(s.score / 30) * 100}%`}
+                  data-dominant={s.key === dominant.key ? 'true' : 'false'}
+                ></div>
+              </div>
+            </div>
+            <span class="result-score-row__num">{s.score}</span>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Cards explicativos -->
+    <section class="result-cards-section">
+      <h2 class="result-section-title">Interpretação dos Seus Estados</h2>
+      <div class="result-cards">
+        {stateCards.map((card) => (
+          <div class={`result-card ${card.key === dominant.key ? 'result-card--dominant' : ''}`}>
+            <div class="result-card__header">
+              <div class="result-card__icon">{card.emoji}</div>
+              <div class="result-card__title-wrap">
+                <h3 class="result-card__title">{card.title}</h3>
+                {card.key === dominant.key && (
+                  <span class="result-card__dominant-tag">Dominante</span>
+                )}
+              </div>
+              <span class="result-card__score">{card.score}/30</span>
+            </div>
+
+            <!-- Mini barra do card -->
+            <div class="result-card__mini-bar">
+              <div
+                class="result-card__mini-fill"
+                style={`width: ${(card.score / 30) * 100}%`}
+              ></div>
+            </div>
+
+            <p class="result-card__desc">
+              {card.score >= 15 ? card.high : card.low}
+            </p>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- Ação -->
+    <div class="result-actions">
+      <a href="/app/egograma/teste" class="btn-refazer">Refazer Avaliação</a>
+      <a href="/app/analises" class="btn-voltar">Ver Todas as Análises</a>
+    </div>
+
+  </div>
+</AppLayout>
+
+<!-- Chart.js via CDN -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<script define:vars={{ chartData }}>
+  document.addEventListener('DOMContentLoaded', () => {
+    const parsed = JSON.parse(chartData);
+    const ctx = document.getElementById('egoRadarChart');
+    if (!ctx) return;
+
+    new Chart(ctx, {
+      type: 'radar',
+      data: {
+        labels: parsed.labels,
+        datasets: [{
+          label: 'Perfil',
+          data: parsed.scores,
+          backgroundColor: 'rgba(212, 175, 55, 0.12)',
+          borderColor: '#D4AF37',
+          borderWidth: 2,
+          pointBackgroundColor: '#D4AF37',
+          pointBorderColor: '#000',
+          pointBorderWidth: 2,
+          pointRadius: 5,
+          pointHoverRadius: 7,
+          pointHoverBackgroundColor: '#E8D5A3',
+        }],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: true,
+        scales: {
+          r: {
+            min: 0,
+            max: 30,
+            ticks: {
+              stepSize: 10,
+              color: '#4A4A4A',
+              backdropColor: 'transparent',
+              font: { size: 10, family: 'Inter, sans-serif' },
+            },
+            grid: {
+              color: 'rgba(255,255,255,0.05)',
+            },
+            angleLines: {
+              color: 'rgba(255,255,255,0.06)',
+            },
+            pointLabels: {
+              color: '#A0A0A0',
+              font: { size: 12, family: 'Inter, sans-serif', weight: '500' },
+            },
+          },
+        },
+        plugins: {
+          legend: { display: false },
+          tooltip: {
+            backgroundColor: '#0A0A0A',
+            borderColor: 'rgba(212,175,55,0.3)',
+            borderWidth: 1,
+            titleColor: '#F5F5F5',
+            bodyColor: '#D4AF37',
+            titleFont: { family: 'Inter, sans-serif', size: 12 },
+            bodyFont: { family: 'Inter, sans-serif', size: 13, weight: 'bold' },
+            callbacks: {
+              label: (ctx) => ` ${ctx.parsed.r} pontos`,
+            },
+          },
+        },
+        animation: {
+          duration: 900,
+          easing: 'easeInOutQuart',
+        },
+      },
+    });
+  });
+</script>
+
+<style>
+  .result-page {
+    padding: 24px 16px 80px;
+    max-width: 720px;
+    margin: 0 auto;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ── Header ── */
+  .result-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 40px;
+  }
+  .result-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.75rem;
+    color: #4A4A4A;
+    text-decoration: none;
+    transition: color 200ms ease;
+  }
+  .result-back:hover { color: #D4AF37; }
+  .result-date {
+    font-size: 0.75rem;
+    color: #4A4A4A;
+  }
+
+  /* ── Hero ── */
+  .result-hero {
+    text-align: center;
+    margin-bottom: 56px;
+  }
+  .result-hero__badge {
+    display: inline-block;
+    font-size: 0.625rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    padding: 5px 12px;
+    border-radius: 4px;
+    background: rgba(212, 175, 55, 0.06);
+    border: 1px solid rgba(212, 175, 55, 0.15);
+    color: #D4AF37;
+    margin-bottom: 20px;
+  }
+  .result-hero__title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 6vw, 3rem);
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.15;
+    margin-bottom: 32px;
+  }
+  .result-dominant {
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 6px;
+    background-color: #0A0A0A;
+    border: 1px solid rgba(212, 175, 55, 0.2);
+    border-radius: 12px;
+    padding: 20px 40px;
+  }
+  .result-dominant__label {
+    font-size: 0.7rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #4A4A4A;
+  }
+  .result-dominant__value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem;
+    font-weight: 700;
+    color: #D4AF37;
+  }
+  .result-dominant__score {
+    font-size: 0.8125rem;
+    color: #A0A0A0;
+  }
+
+  /* ── Section títulos ── */
+  .result-section-title {
+    font-size: 0.75rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #4A4A4A;
+    margin-bottom: 24px;
+  }
+
+  /* ── Gráfico ── */
+  .result-chart-section {
+    margin-bottom: 56px;
+  }
+  .result-chart-wrap {
+    max-width: 400px;
+    margin: 0 auto 32px;
+  }
+
+  /* ── Barra de scores ── */
+  .result-scores {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .result-score-row {
+    display: grid;
+    grid-template-columns: 120px 1fr 32px;
+    align-items: center;
+    gap: 12px;
+  }
+  .result-score-row__label {
+    font-size: 0.8125rem;
+    color: #A0A0A0;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .result-score-row__bar-wrap { }
+  .result-score-row__bar {
+    height: 4px;
+    background-color: rgba(255,255,255,0.05);
+    border-radius: 4px;
+    overflow: hidden;
+  }
+  .result-score-row__fill {
+    height: 100%;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #8C6D3F, #D4AF37);
+    transition: width 0.8s ease;
+  }
+  .result-score-row__fill[data-dominant="true"] {
+    background: linear-gradient(90deg, #D4AF37, #E8D5A3);
+  }
+  .result-score-row__num {
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #F5F5F5;
+    text-align: right;
+  }
+
+  /* ── Cards Explicativos ── */
+  .result-cards-section {
+    margin-bottom: 48px;
+  }
+  .result-cards {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .result-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 20px;
+    transition: border-color 200ms ease;
+  }
+  .result-card--dominant {
+    border-color: rgba(212, 175, 55, 0.25);
+    background-color: rgba(212, 175, 55, 0.03);
+  }
+  .result-card__header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+  }
+  .result-card__icon {
+    font-size: 1.25rem;
+    flex-shrink: 0;
+  }
+  .result-card__title-wrap {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    flex: 1;
+  }
+  .result-card__title {
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: #F5F5F5;
+  }
+  .result-card__dominant-tag {
+    font-size: 0.6rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    padding: 3px 8px;
+    border-radius: 3px;
+    background: rgba(212,175,55,0.1);
+    border: 1px solid rgba(212,175,55,0.2);
+    color: #D4AF37;
+    text-transform: uppercase;
+  }
+  .result-card__score {
+    font-size: 0.875rem;
+    font-weight: 700;
+    color: #D4AF37;
+    flex-shrink: 0;
+  }
+  .result-card__mini-bar {
+    height: 2px;
+    background-color: rgba(255,255,255,0.05);
+    border-radius: 2px;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .result-card__mini-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8C6D3F, #D4AF37);
+    border-radius: 2px;
+  }
+  .result-card__desc {
+    font-size: 0.8125rem;
+    line-height: 1.6;
+    color: #A0A0A0;
+  }
+
+  /* ── Ações ── */
+  .result-actions {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  @media (min-width: 480px) {
+    .result-actions { flex-direction: row; }
+  }
+  .btn-refazer {
+    flex: 1;
+    display: block;
+    padding: 14px 24px;
+    background-color: #D4AF37;
+    color: #000;
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 700;
+    text-align: center;
+    text-decoration: none;
+    letter-spacing: 0.03em;
+    transition: background-color 200ms ease;
+  }
+  .btn-refazer:hover { background-color: #E8D5A3; }
+  .btn-voltar {
+    flex: 1;
+    display: block;
+    padding: 14px 24px;
+    background-color: transparent;
+    color: #F5F5F5;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 8px;
+    font-size: 0.875rem;
+    font-weight: 500;
+    text-align: center;
+    text-decoration: none;
+    transition: border-color 200ms ease;
+  }
+  .btn-voltar:hover { border-color: rgba(255,255,255,0.3); }
+</style>

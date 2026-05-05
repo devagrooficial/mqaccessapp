@@ -1,0 +1,519 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const user     = Astro.locals.user;
+const supabase = Astro.locals.supabase;
+if (!user) return Astro.redirect('/auth/login');
+
+// ── GET: Busca ou cria assessment DISC para o usuário ────────────────────────
+let assessmentId: string | null = null;
+
+const { data: existingAssessment, error: fetchError } = await supabase
+  .from('disc_assessments')
+  .select('id')
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false })
+  .limit(1)
+  .maybeSingle();
+
+if (fetchError) {
+  console.error('🚨 [DISC SSR] Erro ao buscar assessment existente:', JSON.stringify(fetchError));
+}
+
+if (existingAssessment?.id) {
+  assessmentId = existingAssessment.id;
+  console.log(`♻️ [DISC SSR] Reaproveitando assessment: ${assessmentId}`);
+} else {
+  const { data: newAssessment, error: createError } = await supabase
+    .from('disc_assessments')
+    .insert({ user_id: user.id })
+    .select('id')
+    .single();
+
+  if (createError) {
+    console.error('🚨 [FATAL] Erro ao criar Assessment DISC:', JSON.stringify(createError));
+  } else if (newAssessment?.id) {
+    assessmentId = newAssessment.id;
+    console.log(`✅ [DISC SSR] Novo assessment criado: ${assessmentId}`);
+  }
+}
+
+console.log('🎯 [DEBUG SSR] DISC Assessment ID para o HTML:', assessmentId ?? '⚠️ NULL — verifique RLS');
+
+// ── Busca respostas já salvas para destacar opção respondida ─────────────────
+let savedAnswers: Record<string, string> = {}; // { question_id: disc_type }
+if (assessmentId) {
+  const { data: existing } = await supabase
+    .from('disc_answers')
+    .select('question_id, disc_type')
+    .eq('assessment_id', assessmentId);
+
+  if (existing) {
+    for (const row of existing) {
+      savedAnswers[row.question_id] = row.disc_type;
+    }
+  }
+}
+
+// ── Busca perguntas ──────────────────────────────────────────────────────────
+const { data: questions, error: questionsError } = await supabase
+  .from('disc_questions')
+  .select('*')
+  .order('id', { ascending: true });
+
+console.log('🔍 [DISC DEBUG] Erro:', questionsError);
+console.log('📦 [DISC DEBUG] Total perguntas:', questions?.length ?? 0);
+
+const totalQuestions = questions?.length ?? 0;
+---
+
+<AppLayout title="Avaliação — DISC" activeNav="analises">
+  <div
+    class="wizard-page"
+    id="wizard-root"
+    data-assessment-id={assessmentId ?? ''}
+    data-total={totalQuestions}
+  >
+
+    {questions && questions.length > 0 ? (
+      <>
+        <!-- ── Header fixo com progresso ── -->
+        <div class="wizard-header">
+          <div class="wizard-header__top">
+            <a href="/app/analises" class="wizard-cancel" title="Cancelar avaliação">
+              <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M19 12H5M12 19l-7-7 7-7"/>
+              </svg>
+              Sair
+            </a>
+            <span class="wizard-counter">
+              <span id="js-step">1</span> / {totalQuestions}
+            </span>
+          </div>
+          <div class="wizard-progress-bar">
+            <div class="wizard-progress-fill" id="js-fill" style="width: 0%;"></div>
+          </div>
+        </div>
+
+        <!-- ── Steps (1 por tela) ── -->
+        <div class="wizard-steps" id="js-steps">
+          {questions.map((q: any, index: number) => {
+            const stepN     = index + 1;
+            const savedType = savedAnswers[q.id];
+            const hasSaved  = savedType !== undefined;
+
+            const opts = [
+              { text: q.opt1_text, type: q.opt1_type },
+              { text: q.opt2_text, type: q.opt2_type },
+              { text: q.opt3_text, type: q.opt3_type },
+              { text: q.opt4_text, type: q.opt4_type },
+            ].filter(o => o.text && o.type);
+
+            return (
+              <div
+                class="wizard-step"
+                data-step={stepN}
+                data-question-id={q.id}
+                id={`step-${stepN}`}
+                aria-hidden={index !== 0 ? 'true' : 'false'}
+                style={index !== 0 ? 'display:none;' : ''}
+              >
+                <div class="step-eyebrow">
+                  <span class="step-type">DISC</span>
+                  {hasSaved && (
+                    <span class="step-saved-badge" id={`saved-${stepN}`}>
+                      <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3">
+                        <polyline points="20 6 9 17 4 12"/>
+                      </svg>
+                      Salvo
+                    </span>
+                  )}
+                </div>
+
+                <h1 class="step-question">
+                  <span class="step-num">{String(stepN).padStart(2, '0')}.</span>
+                  Escolha a palavra que melhor define você:
+                </h1>
+
+                <!-- 4 botões DISC (palavra → tipo) -->
+                <div class="disc-options" role="radiogroup" aria-label={`Pergunta ${stepN} de ${totalQuestions}`}>
+                  {opts.map((opt) => (
+                    <button
+                      type="button"
+                      class={`disc-btn disc-btn--${opt.type.toLowerCase()}${savedType === opt.type ? ' disc-btn--selected' : ''}`}
+                      data-disc-type={opt.type}
+                      data-question-id={q.id}
+                    >
+                      <span class="disc-btn__badge">{opt.type}</span>
+                      <span class="disc-btn__text">{opt.text}</span>
+                    </button>
+                  ))}
+                </div>
+
+                <div class="step-status" id={`status-${stepN}`} aria-live="polite"></div>
+              </div>
+            );
+          })}
+        </div>
+
+        <!-- ── Controles de navegação ── -->
+        <div class="wizard-nav" id="js-nav">
+          <button type="button" id="js-prev" class="wizard-btn wizard-btn--outline" disabled>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M12 19l-7-7 7-7"/>
+            </svg>
+            Anterior
+          </button>
+
+          <button type="button" id="js-next" class="wizard-btn wizard-btn--ghost">
+            Próxima
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M5 12h14M12 5l7 7-7 7"/>
+            </svg>
+          </button>
+
+          <a
+            id="js-submit"
+            href={`/app/disc/relatorio?id=${assessmentId}`}
+            class="wizard-btn wizard-btn--gold"
+            style="display:none; text-decoration:none;"
+            aria-disabled="true"
+          >
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            Gerar Relatório
+          </a>
+        </div>
+      </>
+    ) : (
+      <div class="wizard-empty">
+        <p>Nenhuma pergunta encontrada.<br/>Verifique o banco de dados ou as políticas RLS.</p>
+        {questionsError && <p style="font-size:0.75rem;color:#3A3A3A;">Erro: {questionsError.message}</p>}
+      </div>
+    )}
+
+  </div>
+</AppLayout>
+
+<script define:vars={{ assessmentId, totalQuestions }}>
+  // Valores SSR injetados — disponíveis imediatamente, sem leitura de DOM
+  var ASSESSMENT_ID = assessmentId || '';
+  var TOTAL         = totalQuestions || 0;
+
+  function initWizard() {
+    console.log('🚀 [DISC WIZARD] initWizard() executado!');
+    console.log('🔑 [DISC WIZARD] assessment_id:', ASSESSMENT_ID || '⚠ VAZIO');
+    console.log('📊 [DISC WIZARD] total perguntas:', TOTAL);
+
+    if (!ASSESSMENT_ID) {
+      console.error('❌ [DISC WIZARD] assessment_id VAZIO — INSERT no SSR falhou. Verifique RLS da tabela disc_assessments.');
+    }
+
+    var fill           = document.getElementById('js-fill');
+    var stepLabel      = document.getElementById('js-step');
+    var prevBtn        = document.getElementById('js-prev');
+    var nextBtn        = document.getElementById('js-next');
+    var submitBtn      = document.getElementById('js-submit');
+    var stepsContainer = document.getElementById('js-steps');
+
+    if (!stepsContainer) {
+      console.error('[DISC WIZARD] ❌ #js-steps não encontrado no DOM — abortando.');
+      return;
+    }
+
+    var currentStep   = 1;
+    var answeredSteps = {};
+
+    // Pré-carrega steps já respondidos (via botão com classe --selected)
+    stepsContainer.querySelectorAll('.disc-btn--selected').forEach(function(btn) {
+      var se = btn.closest('.wizard-step');
+      if (se && se.dataset.step) answeredSteps[se.dataset.step] = true;
+    });
+
+    function getStepEl(n) { return document.getElementById('step-' + n); }
+
+    function hasAnsweredStep(n) {
+      var el = getStepEl(n);
+      return !!(el && el.querySelector('.disc-btn--selected'));
+    }
+
+    function updateUI() {
+      var isLast   = currentStep === TOTAL;
+      var isFirst  = currentStep === 1;
+      var answered = hasAnsweredStep(currentStep);
+      var count    = Object.keys(answeredSteps).length;
+      var pct      = TOTAL > 0 ? (count / TOTAL) * 100 : 0;
+
+      if (fill)      fill.style.width     = pct + '%';
+      if (stepLabel) stepLabel.textContent = String(currentStep);
+      if (prevBtn)   prevBtn.disabled      = isFirst;
+
+      if (isLast) {
+        if (nextBtn)   nextBtn.style.display  = 'none';
+        if (submitBtn) submitBtn.style.display = 'flex';
+        if (submitBtn) {
+          submitBtn.style.opacity       = answered ? '1'    : '0.4';
+          submitBtn.style.pointerEvents = answered ? 'auto' : 'none';
+          if (answered) submitBtn.removeAttribute('aria-disabled');
+          else          submitBtn.setAttribute('aria-disabled', 'true');
+        }
+      } else {
+        if (nextBtn)   nextBtn.style.display  = 'flex';
+        if (submitBtn) submitBtn.style.display = 'none';
+      }
+    }
+
+    function showStep(n, direction) {
+      var current = getStepEl(currentStep);
+      var next    = getStepEl(n);
+      if (!current || !next) return;
+
+      current.style.display = 'none';
+      current.setAttribute('aria-hidden', 'true');
+
+      next.style.opacity   = '0';
+      next.style.transform = direction > 0 ? 'translateX(24px)' : 'translateX(-24px)';
+      next.style.display   = 'flex';
+      next.setAttribute('aria-hidden', 'false');
+
+      requestAnimationFrame(function() {
+        next.style.transition = 'opacity 280ms ease, transform 280ms ease';
+        next.style.opacity    = '1';
+        next.style.transform  = 'translateX(0)';
+      });
+
+      currentStep = n;
+      updateUI();
+    }
+
+    // ── Auto-save ──────────────────────────────────────────────────────────────
+    function saveAnswer(questionId, discType, stepN) {
+      var statusEl = document.getElementById('status-' + stepN);
+      var badgeEl  = document.getElementById('saved-'  + stepN);
+
+      if (statusEl) { statusEl.textContent = '…'; statusEl.className = 'step-status step-status--saving'; }
+
+      console.log('[DISC WIZARD] 💾 Payload:', { assessment_id: ASSESSMENT_ID, question_id: questionId, disc_type: discType });
+
+      fetch('/api/disc/save-answer', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ assessment_id: ASSESSMENT_ID, question_id: questionId, disc_type: discType }),
+      })
+      .then(function(res) {
+        return res.json().then(function(json) { return { ok: res.ok, json: json }; });
+      })
+      .then(function(r) {
+        if (!r.ok) throw new Error(r.json.error || 'Erro desconhecido');
+        console.log('[DISC WIZARD] ✅ Salvo! step', stepN);
+        answeredSteps[String(stepN)] = true;
+        updateUI();
+        if (statusEl) {
+          statusEl.textContent = '✓ Salvo';
+          statusEl.className   = 'step-status step-status--ok';
+          setTimeout(function() { if (statusEl) statusEl.textContent = ''; }, 2000);
+        }
+        if (badgeEl) {
+          badgeEl.style.display = 'inline-flex';
+        } else {
+          var eyeEl  = getStepEl(stepN);
+          var eyebrow = eyeEl && eyeEl.querySelector('.step-eyebrow');
+          if (eyebrow) {
+            var badge = document.createElement('span');
+            badge.className = 'step-saved-badge';
+            badge.id        = 'saved-' + stepN;
+            badge.innerHTML = '<svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg> Salvo';
+            eyebrow.appendChild(badge);
+          }
+        }
+      })
+      .catch(function(err) {
+        console.error('[DISC WIZARD] ❌ save-answer falhou:', err.message);
+        if (statusEl) { statusEl.textContent = '⚠ Falha'; statusEl.className = 'step-status step-status--error'; }
+      });
+    }
+
+    // ── Event Delegation — clique nos botões DISC ─────────────────────────────
+    stepsContainer.addEventListener('click', function(event) {
+      var btn = event.target.closest('.disc-btn');
+      if (!btn) return;
+
+      var stepEl   = btn.closest('.wizard-step');
+      if (!stepEl) return;
+
+      var discType   = btn.dataset.discType   || '';
+      var questionId = btn.dataset.questionId || '';
+      var stepN      = parseInt(stepEl.dataset.step || '0', 10);
+
+      console.log('🔘 [DISC WIZARD] Click — disc_type:', discType, '| step:', stepN);
+
+      // Destaca botão selecionado (remove de todos, aplica no clicado)
+      stepEl.querySelectorAll('.disc-btn').forEach(function(b) {
+        b.classList.remove('disc-btn--selected');
+      });
+      btn.classList.add('disc-btn--selected');
+
+      saveAnswer(questionId, discType, stepN);
+
+      // Auto-avanço
+      if (currentStep < TOTAL) {
+        setTimeout(function() { showStep(currentStep + 1, 1); }, 350);
+      }
+    });
+
+    if (prevBtn) prevBtn.addEventListener('click', function() { if (currentStep > 1) showStep(currentStep - 1, -1); });
+    if (nextBtn) nextBtn.addEventListener('click', function() { if (currentStep < TOTAL) showStep(currentStep + 1, 1); });
+
+    if (submitBtn) {
+      submitBtn.addEventListener('click', function(e) {
+        e.preventDefault();
+        if (!ASSESSMENT_ID) { console.error('[DISC WIZARD] ❌ Sem assessment_id.'); return; }
+        console.log('[DISC WIZARD] 🚀 Redirecionando para relatório, id:', ASSESSMENT_ID);
+        window.location.href = '/app/disc/relatorio?id=' + ASSESSMENT_ID;
+      });
+    }
+
+    console.log('✅ [DISC WIZARD] Pronto! Event delegation ativo em #js-steps.');
+    updateUI();
+  }
+
+  document.addEventListener('DOMContentLoaded', initWizard);
+  document.addEventListener('astro:page-load', initWizard);
+</script>
+
+<style>
+  .wizard-page {
+    min-height: 100dvh;
+    display: flex;
+    flex-direction: column;
+    background-color: #000;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* ── Header ── */
+  .wizard-header {
+    position: sticky; top: 0; z-index: 20;
+    background-color: #000;
+    padding: 16px 24px 12px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+  }
+  .wizard-header__top {
+    display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
+  }
+  .wizard-cancel {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.75rem; color: #4A4A4A; text-decoration: none; transition: color 200ms;
+  }
+  .wizard-cancel:hover { color: #D4AF37; }
+  .wizard-counter { font-size: 0.75rem; font-weight: 600; letter-spacing: 0.08em; color: #4A4A4A; }
+  .wizard-progress-bar {
+    width: 100%; height: 3px; background: rgba(255,255,255,0.05); border-radius: 3px; overflow: hidden;
+  }
+  .wizard-progress-fill {
+    height: 100%;
+    background: linear-gradient(90deg, #8C6D3F, #D4AF37);
+    border-radius: 3px;
+    transition: width 400ms cubic-bezier(0.4,0,0.2,1);
+  }
+
+  /* ── Steps ── */
+  .wizard-steps { flex: 1; display: flex; align-items: stretch; }
+  .wizard-step {
+    width: 100%; flex-direction: column; justify-content: center;
+    padding: 40px 24px 24px; max-width: 620px; margin: 0 auto;
+    will-change: opacity, transform;
+  }
+
+  /* ── Eyebrow ── */
+  .step-eyebrow { display: flex; align-items: center; gap: 10px; margin-bottom: 20px; }
+  .step-type {
+    display: inline-block; font-size: 0.625rem; font-weight: 700;
+    letter-spacing: 0.14em; text-transform: uppercase; padding: 4px 10px;
+    border-radius: 4px; background: rgba(212,175,55,0.08);
+    border: 1px solid rgba(212,175,55,0.18); color: #D4AF37;
+  }
+  .step-saved-badge {
+    display: inline-flex; align-items: center; gap: 4px;
+    font-size: 0.625rem; font-weight: 600; letter-spacing: 0.08em;
+    color: #4ade80; text-transform: uppercase; opacity: 0.7;
+  }
+
+  /* ── Pergunta ── */
+  .step-question {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.125rem, 3.5vw, 1.5rem);
+    font-weight: 700; color: #F5F5F5; line-height: 1.35; margin-bottom: 28px;
+  }
+  .step-num { color: #D4AF37; opacity: 0.4; margin-right: 8px; font-size: 0.875em; }
+
+  /* ── DISC Options (4 botões) ── */
+  .disc-options {
+    display: flex; flex-direction: column; gap: 10px;
+  }
+  .disc-btn {
+    display: flex; align-items: center; gap: 14px;
+    background: #0A0A0A; border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 12px; padding: 16px 20px;
+    cursor: pointer; text-align: left; width: 100%;
+    transition: border-color 200ms, background 200ms;
+    font-family: 'Inter', sans-serif;
+  }
+  .disc-btn:hover { border-color: rgba(212,175,55,0.35); background: rgba(212,175,55,0.04); }
+  .disc-btn--selected { border-color: #D4AF37; background: rgba(212,175,55,0.09); }
+
+  .disc-btn__badge {
+    width: 28px; height: 28px; border-radius: 6px; flex-shrink: 0;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 0.7rem; font-weight: 800; letter-spacing: 0.05em;
+    background: rgba(255,255,255,0.05); color: #6A6A6A;
+    transition: background 200ms, color 200ms;
+  }
+  .disc-btn--d .disc-btn__badge { background: rgba(239,68,68,0.12); color: #f87171; }
+  .disc-btn--i .disc-btn__badge { background: rgba(251,191,36,0.12); color: #fbbf24; }
+  .disc-btn--s .disc-btn__badge { background: rgba(74,222,128,0.12); color: #4ade80; }
+  .disc-btn--c .disc-btn__badge { background: rgba(96,165,250,0.12); color: #60a5fa; }
+
+  .disc-btn--selected.disc-btn--d { border-color: #f87171; background: rgba(239,68,68,0.07); }
+  .disc-btn--selected.disc-btn--i { border-color: #fbbf24; background: rgba(251,191,36,0.07); }
+  .disc-btn--selected.disc-btn--s { border-color: #4ade80; background: rgba(74,222,128,0.07); }
+  .disc-btn--selected.disc-btn--c { border-color: #60a5fa; background: rgba(96,165,250,0.07); }
+
+  .disc-btn__text {
+    font-size: 0.9375rem; font-weight: 500; color: #A0A0A0; transition: color 200ms;
+  }
+  .disc-btn--selected .disc-btn__text { color: #F5F5F5; }
+
+  /* ── Status ── */
+  .step-status { margin-top: 12px; font-size: 0.7rem; font-weight: 600; letter-spacing: 0.06em; text-transform: uppercase; min-height: 16px; }
+  .step-status--saving { color: #4A4A4A; }
+  .step-status--ok     { color: #4ade80; }
+  .step-status--error  { color: #f87171; }
+
+  /* ── Nav ── */
+  .wizard-nav {
+    display: flex; gap: 12px; padding: 20px 24px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+    background: #000; position: sticky; bottom: 0; z-index: 20;
+  }
+  .wizard-btn {
+    display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    height: 48px; padding: 0 20px; border-radius: 8px;
+    font-family: 'Inter', sans-serif; font-size: 0.875rem; font-weight: 600;
+    cursor: pointer; border: none; flex-shrink: 0;
+    transition: background 200ms, border-color 200ms, color 200ms;
+  }
+  .wizard-btn--outline { background: transparent; border: 1px solid rgba(255,255,255,0.08); color: #5A5A5A; }
+  .wizard-btn--outline:hover:not(:disabled) { border-color: rgba(255,255,255,0.25); color: #A0A0A0; }
+  .wizard-btn--outline:disabled { opacity: 0.3; cursor: not-allowed; }
+  .wizard-btn--ghost { flex: 1; background: rgba(255,255,255,0.04); border: 1px solid rgba(255,255,255,0.06); color: #F5F5F5; }
+  .wizard-btn--ghost:hover { background: rgba(255,255,255,0.08); }
+  .wizard-btn--gold  { flex: 1; background: #D4AF37; color: #000; }
+  .wizard-btn--gold:hover { background: #E8D5A3; }
+
+  /* ── Empty ── */
+  .wizard-empty {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    min-height: 60vh; text-align: center; font-size: 0.875rem; color: #4A4A4A; padding: 24px; gap: 12px;
+  }
+</style>

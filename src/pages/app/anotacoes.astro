@@ -1,0 +1,309 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { supabase } from '../../lib/supabase';
+
+// Padrão estabelecido no projeto — usa middleware, não getUser()
+const user = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/auth/login');
+}
+
+// ── Busca das Anotações com JOIN para nome da aula ────────────────────────
+type Nota = {
+  id: string;
+  content: string;
+  lesson_id: string;
+  created_at: string;
+  lesson_title?: string;
+};
+
+let anotacoes: Nota[] = [];
+
+const { data, error } = await supabase
+  .from('lesson_notes')
+  .select(`
+    id,
+    content,
+    lesson_id,
+    created_at,
+    course_lessons ( title )
+  `)
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false });
+
+if (error) {
+  console.error('[MQ] Erro ao buscar anotações:', error.message);
+} else if (data) {
+  anotacoes = data.map((n: any) => ({
+    id: n.id,
+    content: n.content,
+    lesson_id: n.lesson_id,
+    created_at: n.created_at,
+    lesson_title: n.course_lessons?.title ?? null,
+  }));
+}
+
+// ── Helper de data relativa ───────────────────────────────────────────────
+function formatDate(iso: string): string {
+  const date = new Date(iso);
+  const now  = new Date();
+  const diffD = Math.floor((now.getTime() - date.getTime()) / 86400000);
+
+  if (diffD === 0) return 'Hoje';
+  if (diffD === 1) return 'Ontem';
+  if (diffD < 7)  return `Há ${diffD} dias`;
+
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit',
+    month: 'short',
+    year: 'numeric',
+  }).format(date);
+}
+
+// Shortcode da aula (primeiros 8 chars do UUID)
+function shortId(uuid: string): string {
+  return uuid?.substring(0, 8)?.toUpperCase() ?? '—';
+}
+---
+
+<AppLayout title="Minhas Anotações">
+  <div class="notas-page">
+
+    <!-- HEADER -->
+    <header class="notas-header">
+      <a href="/app/perfil" class="notas-back-btn" aria-label="Voltar para Perfil">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <div>
+        <h1 class="notas-title">Minhas Anotações</h1>
+        {anotacoes.length > 0 && (
+          <p class="notas-count">{anotacoes.length} nota{anotacoes.length !== 1 ? 's' : ''} registrada{anotacoes.length !== 1 ? 's' : ''}</p>
+        )}
+      </div>
+    </header>
+
+    <!-- CARD PRINCIPAL -->
+    <div class="notas-card">
+
+      {anotacoes.length === 0 ? (
+        <!-- EMPTY STATE -->
+        <div class="notas-empty">
+          <div class="notas-empty__icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M2 6h4"/><path d="M2 10h4"/><path d="M2 14h4"/><path d="M2 18h4"/>
+              <rect width="16" height="20" x="4" y="2" rx="2"/>
+              <path d="M16 2v20"/>
+            </svg>
+          </div>
+          <h2 class="notas-empty__title">Nenhuma anotação ainda</h2>
+          <p class="notas-empty__text">
+            Seus insights e resumos das aulas aparecerão aqui. Comece a estudar e registre seu progresso!
+          </p>
+          <a href="/app/cursos" class="notas-empty__cta">
+            Ir para os cursos
+            <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="m12 5 7 7-7 7"/></svg>
+          </a>
+        </div>
+      ) : (
+        <!-- LISTA DE NOTAS -->
+        <ul class="notas-list">
+          {anotacoes.map((nota) => (
+            <li class="nota-item">
+
+              <!-- Cabeçalho da nota -->
+              <div class="nota-item__header">
+                <div class="nota-item__meta">
+                  {nota.lesson_title ? (
+                    <span class="nota-item__lesson">{nota.lesson_title}</span>
+                  ) : (
+                    <span class="nota-item__lesson nota-item__lesson--code">
+                      REF: {shortId(nota.lesson_id)}
+                    </span>
+                  )}
+                  <span class="nota-item__date">{formatDate(nota.created_at)}</span>
+                </div>
+              </div>
+
+              <!-- Conteúdo -->
+              <p class="nota-item__content">{nota.content}</p>
+
+            </li>
+          ))}
+        </ul>
+      )}
+
+    </div>
+  </div>
+</AppLayout>
+
+<style>
+  /* ── Container ── */
+  .notas-page {
+    padding: 24px 16px 48px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .notas-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .notas-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.5);
+    transition: background-color 200ms ease, color 200ms ease;
+    flex-shrink: 0;
+  }
+  .notas-back-btn:hover {
+    background-color: rgba(255,255,255,0.1);
+    color: #ffffff;
+  }
+
+  .notas-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.2;
+  }
+
+  .notas-count {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    color: rgba(255,255,255,0.3);
+    margin-top: 4px;
+  }
+
+  /* ── Card ── */
+  .notas-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    overflow: hidden;
+    min-height: 320px;
+  }
+
+  /* ── Empty State ── */
+  .notas-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 56px 24px;
+    gap: 12px;
+  }
+
+  .notas-empty__icon {
+    color: rgba(255,255,255,0.1);
+    margin-bottom: 8px;
+  }
+
+  .notas-empty__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .notas-empty__text {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.3);
+    line-height: 1.65;
+    max-width: 300px;
+  }
+
+  .notas-empty__cta {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 600;
+    color: #D4AF37;
+    transition: color 200ms ease, gap 200ms ease;
+  }
+  .notas-empty__cta:hover {
+    color: #ffffff;
+    gap: 10px;
+  }
+
+  /* ── Lista ── */
+  .notas-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Nota Item ── */
+  .nota-item {
+    padding: 22px 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background-color 200ms ease;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .nota-item:last-child {
+    border-bottom: none;
+  }
+  .nota-item:hover {
+    background-color: rgba(255,255,255,0.02);
+  }
+
+  .nota-item__header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+  }
+
+  .nota-item__meta {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+
+  .nota-item__lesson {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    color: #D4AF37;
+  }
+
+  .nota-item__lesson--code {
+    color: rgba(255,255,255,0.25);
+    font-family: 'JetBrains Mono', 'Fira Code', 'Courier New', monospace;
+    font-weight: 400;
+    text-transform: none;
+    letter-spacing: 0.02em;
+  }
+
+  .nota-item__date {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: rgba(255,255,255,0.2);
+  }
+
+  .nota-item__content {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9rem;
+    color: rgba(255,255,255,0.65);
+    line-height: 1.7;
+    white-space: pre-wrap;
+  }
+</style>

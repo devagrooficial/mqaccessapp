@@ -1,0 +1,14 @@
+---
+// Rota de logout — limpa cookies de sessão e redireciona para login
+import { supabase } from '@/lib/supabase';
+
+// Invalida a sessão no servidor Supabase
+await supabase.auth.signOut();
+
+// Remove os cookies de sessão SSR
+const cookieClear = { path: '/', maxAge: 0 };
+Astro.cookies.set('sb-access-token',  '', cookieClear);
+Astro.cookies.set('sb-refresh-token', '', cookieClear);
+
+return Astro.redirect('/auth/login');
+---

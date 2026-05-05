@@ -1,0 +1,221 @@
+---
+import BaseLayout from '@/layouts/BaseLayout.astro';
+
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+if (!user) return Astro.redirect('/login');
+
+const productId = Astro.url.searchParams.get('id') ?? '';
+
+const { data: product } = productId
+  ? await supabase.from('products').select('id, title, type, price_brl').eq('id', productId).single()
+  : { data: null };
+
+let formError: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  if (!productId || !product) {
+    formError = 'Produto não encontrado. Verifique o link de acesso.';
+  } else {
+    const { error: purchaseError } = await supabase.from('purchases').insert({
+      user_id:        user.id,
+      product_id:     product.id,
+      amount_brl:     0,
+      payment_method: 'pix',
+      payment_status: 'approved',
+    });
+
+    if (purchaseError) {
+      console.error('[CHECKOUT LIVRO] Erro ao liberar:', purchaseError);
+      if (purchaseError.code === '23505') {
+        return Astro.redirect(`/app/sucesso-livro?id=${product.id}`);
+      }
+      formError = 'Não foi possível liberar seu exemplar agora. Tente novamente.';
+    } else {
+      return Astro.redirect(`/app/sucesso-livro?id=${product.id}`);
+    }
+  }
+}
+---
+
+<BaseLayout title="Garantir Exemplar Gratuito · MQ Access">
+<div class="ck-shell">
+
+  <header class="ck-header">
+    <a href="/app/home" class="ck-logo">
+      <img src="/images/logohorizontal.png" alt="MQ Access" class="h-5 w-auto object-contain" />
+    </a>
+    <div class="ck-secure-badge">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Acesso Subsidiado</span>
+    </div>
+  </header>
+
+  <main class="ck-grid">
+
+    <!-- ESQUERDA -->
+    <div class="ck-payment-col">
+      <h1 class="ck-title">Garantir<br/>Exemplar Gratuito</h1>
+      <p class="ck-subtitle">Subsídio de 100% aplicado. Nenhuma cobrança será realizada.</p>
+
+      <div class="ck-subsidy-card">
+        <div class="ck-subsidy-badge">SUBSÍDIO ATIVO</div>
+        <div class="ck-subsidy-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M4 19.5A2.5 2.5 0 016.5 17H20"/>
+            <path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/>
+          </svg>
+        </div>
+        <p class="ck-subsidy-title">Livro Digital 100% Subsidiado</p>
+        <p class="ck-subsidy-desc">Seu exemplar digital será liberado imediatamente. O ambiente de leitura imersivo estará pronto em instantes — nenhum valor será cobrado.</p>
+        <div class="ck-subsidy-divider"></div>
+        <div class="ck-subsidy-method">
+          <span class="ck-method-label">Formato de entrega</span>
+          <span class="ck-method-value">E-book Oficial · Acesso Vitalício</span>
+        </div>
+      </div>
+
+      {formError && (
+        <div class="ck-error-alert" role="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
+          <span>{formError}</span>
+        </div>
+      )}
+
+      <form class="ck-form" method="POST" id="ck-access-form">
+        <input type="hidden" name="product_id" value={productId} />
+        <div class="ck-trust">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Liberação Instantânea · Leitura Disponível Imediatamente</span>
+        </div>
+        <button type="submit" class="ck-cta ck-cta--mobile">
+          <span class="ck-cta-inner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+            GARANTIR EXEMPLAR GRATUITO
+          </span>
+        </button>
+      </form>
+    </div>
+
+    <!-- DIREITA -->
+    <div class="ck-summary-col">
+      <div class="ck-summary-card">
+        <p class="ck-summary-label">RESUMO DO PEDIDO</p>
+        <div class="ck-order-item">
+          <div class="ck-order-thumb">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          </div>
+          <div class="ck-order-info">
+            <p class="ck-order-name">{product?.title ?? 'Livro Digital · E-book Oficial'}</p>
+            <p class="ck-order-type">E-book Oficial · Acesso Vitalício</p>
+          </div>
+          <div class="ck-price-stack">
+            {product?.price_brl && product.price_brl > 0 && (
+              <del class="ck-price-original">R$ {Number(product.price_brl).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}</del>
+            )}
+            <span class="ck-price-final">R$ 0,00</span>
+          </div>
+        </div>
+      </div>
+
+      <div class="ck-discount-banner">
+        <div class="ck-discount-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
+          <span>Subsídio de 100% aplicado</span>
+        </div>
+        <span class="ck-discount-tag">100% OFF</span>
+      </div>
+
+      <div class="ck-total-block">
+        <div class="ck-total-row">
+          <span class="ck-total-label">Total</span>
+          <span class="ck-total-value ck-total-value--free">R$ 0,00</span>
+        </div>
+        <p class="ck-total-note">Nenhum valor será cobrado</p>
+      </div>
+
+      <button type="submit" form="ck-access-form" class="ck-cta ck-cta--desktop">
+        <span class="ck-cta-inner">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 19.5A2.5 2.5 0 016.5 17H20"/><path d="M6.5 2H20v20H6.5A2.5 2.5 0 014 19.5v-15A2.5 2.5 0 016.5 2z"/></svg>
+          GARANTIR EXEMPLAR GRATUITO
+        </span>
+      </button>
+
+      <p class="ck-bottom-trust">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Liberação imediata · Leitura disponível em instantes
+      </p>
+    </div>
+  </main>
+</div>
+</BaseLayout>
+
+<script is:inline>
+  (function () {
+    var form = document.getElementById('ck-access-form');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+      document.querySelectorAll('.ck-cta').forEach(function (btn) {
+        btn.disabled = true;
+        var inner = btn.querySelector('.ck-cta-inner');
+        if (inner) inner.innerHTML = '<svg class="ck-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg> Liberando exemplar...';
+      });
+    });
+  })();
+</script>
+
+<style>
+  :root { --gold: #C9A96E; --gold-light: #E8D5A3; }
+  .ck-shell { min-height:100dvh; background:#000; display:flex; flex-direction:column; font-family:'Inter',sans-serif; }
+  .ck-header { display:flex; align-items:center; justify-content:space-between; padding:20px 24px; border-bottom:1px solid rgba(255,255,255,0.05); }
+  .ck-logo { display:flex; align-items:baseline; gap:2px; text-decoration:none; line-height:1; }
+  .ck-secure-badge { display:flex; align-items:center; gap:6px; font-size:0.6875rem; color:var(--gold); opacity:0.8; }
+  .ck-grid { flex:1; display:grid; grid-template-columns:1fr; max-width:1100px; width:100%; margin:0 auto; padding:32px 16px 64px; gap:40px; }
+  @media (min-width:860px) { .ck-grid { grid-template-columns:3fr 2fr; gap:64px; padding:48px 32px 80px; align-items:start; } }
+  .ck-title { font-family:'Playfair Display',serif; font-size:clamp(1.75rem,4vw,2.5rem); font-weight:700; color:#F5F5F5; margin-bottom:8px; line-height:1.1; }
+  .ck-subtitle { font-size:.8125rem; color:#4A4A4A; margin-bottom:32px; }
+  .ck-subsidy-card { position:relative; background:linear-gradient(140deg,#0a0d0d,#081110); border:1px solid rgba(201,169,110,0.22); border-radius:16px; padding:28px 24px 24px; margin-bottom:24px; overflow:hidden; }
+  .ck-subsidy-card::before { content:''; position:absolute; inset:0; background:radial-gradient(ellipse at 50% 0%,rgba(201,169,110,0.07),transparent 65%); pointer-events:none; }
+  .ck-subsidy-card::after { content:''; position:absolute; top:0; left:0; right:0; height:1px; background:linear-gradient(90deg,transparent,rgba(201,169,110,0.5),transparent); }
+  .ck-subsidy-badge { display:inline-flex; align-items:center; font-size:.5625rem; font-weight:800; letter-spacing:.18em; color:var(--gold); background:rgba(201,169,110,0.08); border:1px solid rgba(201,169,110,0.2); border-radius:4px; padding:4px 10px; margin-bottom:20px; }
+  .ck-subsidy-icon { width:52px; height:52px; border-radius:50%; background:rgba(201,169,110,0.06); border:1px solid rgba(201,169,110,0.18); display:flex; align-items:center; justify-content:center; color:var(--gold); margin-bottom:16px; }
+  .ck-subsidy-title { font-family:'Playfair Display',serif; font-size:1.125rem; font-weight:700; color:#F5F5F5; margin-bottom:8px; }
+  .ck-subsidy-desc { font-size:.8125rem; color:#5A5A5A; line-height:1.65; margin-bottom:20px; }
+  .ck-subsidy-divider { height:1px; background:rgba(255,255,255,0.04); margin-bottom:16px; }
+  .ck-subsidy-method { display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:4px; }
+  .ck-method-label { font-size:.625rem; letter-spacing:.1em; color:#3A3A3A; text-transform:uppercase; }
+  .ck-method-value { font-size:.75rem; color:var(--gold); font-weight:500; }
+  .ck-error-alert { display:flex; align-items:center; gap:10px; background:rgba(220,38,38,0.08); border:1px solid rgba(220,38,38,0.25); border-radius:8px; padding:12px 16px; font-size:.8125rem; color:#FCA5A5; margin-bottom:20px; }
+  .ck-form { display:flex; flex-direction:column; }
+  .ck-trust { display:flex; align-items:center; gap:8px; font-size:.6875rem; color:#2E2E2E; margin-bottom:24px; }
+  .ck-summary-card { background:#0A0A0A; border:1px solid rgba(255,255,255,0.05); border-radius:16px; padding:20px; margin-bottom:12px; }
+  .ck-summary-label { font-size:.625rem; font-weight:600; letter-spacing:.14em; color:#3A3A3A; margin-bottom:16px; }
+  .ck-order-item { display:flex; align-items:flex-start; gap:12px; padding:12px 0; }
+  .ck-order-thumb { width:40px; height:40px; border-radius:8px; background:#110E08; border:1px solid rgba(255,255,255,0.06); display:flex; align-items:center; justify-content:center; color:var(--gold); flex-shrink:0; }
+  .ck-order-info { flex:1; }
+  .ck-order-name { font-size:.8125rem; font-weight:500; color:#E0E0E0; margin-bottom:3px; line-height:1.3; }
+  .ck-order-type { font-size:.6875rem; color:#3A3A3A; }
+  .ck-price-stack { display:flex; flex-direction:column; align-items:flex-end; flex-shrink:0; gap:2px; }
+  .ck-price-original { font-size:.75rem; color:#3A3A3A; text-decoration:line-through; font-family:'Playfair Display',serif; white-space:nowrap; }
+  .ck-price-final { font-family:'Playfair Display',serif; font-size:.9375rem; font-weight:700; color:var(--gold); white-space:nowrap; }
+  .ck-discount-banner { display:flex; align-items:center; justify-content:space-between; background:rgba(201,169,110,0.05); border:1px solid rgba(201,169,110,0.15); border-radius:10px; padding:10px 14px; margin-bottom:12px; }
+  .ck-discount-left { display:flex; align-items:center; gap:8px; font-size:.75rem; color:#5A5A5A; }
+  .ck-discount-left svg { color:#4ade80; flex-shrink:0; }
+  .ck-discount-tag { font-size:.625rem; font-weight:800; letter-spacing:.1em; color:#000; background:var(--gold); border-radius:4px; padding:3px 8px; }
+  .ck-total-block { padding:16px 0; border-top:1px solid rgba(255,255,255,0.05); margin-bottom:20px; }
+  .ck-total-row { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
+  .ck-total-label { font-size:.75rem; color:#4A4A4A; }
+  .ck-total-value { font-family:'Playfair Display',serif; font-size:1.875rem; font-weight:700; color:#F5F5F5; }
+  .ck-total-value--free { color:var(--gold); }
+  .ck-total-note { font-size:.6875rem; color:#2E2E2E; text-align:right; }
+  .ck-cta { display:flex; align-items:center; justify-content:center; gap:10px; width:100%; height:54px; background:linear-gradient(135deg,#C9A96E,#A8854A); color:#000; font-family:'Inter',sans-serif; font-size:.8125rem; font-weight:800; letter-spacing:.12em; border:none; border-radius:8px; cursor:pointer; transition:opacity 200ms,transform 150ms,box-shadow 250ms; margin-bottom:12px; box-shadow:0 4px 20px rgba(201,169,110,0.2); }
+  .ck-cta:hover { opacity:.92; transform:translateY(-1px); box-shadow:0 8px 28px rgba(201,169,110,0.3); }
+  .ck-cta:disabled { opacity:.65; cursor:not-allowed; transform:none; }
+  .ck-cta--mobile { display:flex; }
+  .ck-cta--desktop { display:none; }
+  @media (min-width:860px) { .ck-cta--mobile { display:none; } .ck-cta--desktop { display:flex; } }
+  .ck-cta-inner { display:flex; align-items:center; gap:8px; }
+  .ck-spinner { animation:spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
+  .ck-bottom-trust { display:flex; align-items:center; justify-content:center; gap:6px; font-size:.6875rem; color:#252525; text-align:center; }
+</style>

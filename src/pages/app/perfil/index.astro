@@ -1,18 +1,45 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
 
-const menuItems = [
-  { label: 'Editar Perfil', href: '#editar', icon: 'user' },
-  { label: 'Minhas Anotações', href: '#anotacoes', icon: 'note' },
-  { label: 'Favoritos', href: '#favoritos', icon: 'heart' },
-  { label: 'Notificações', href: '#notificacoes', icon: 'bell' },
-  { label: 'Link de Afiliação', href: '#afiliacao', icon: 'link', premium: true },
-];
+const user     = Astro.locals.user;
+const supabase = Astro.locals.supabase; // ← SSR client com cookies (passa no RLS)
 
-const legalItems = [
-  { label: 'Termos de Uso', href: '#termos' },
-  { label: 'Ajuda', href: '#ajuda' },
-  { label: 'Suporte', href: '#suporte' },
+let userName = "Carregando...";
+let userEmail = user?.email || "";
+let avatarInitials = "MQ";
+
+if (user) {
+  // Busca o nome na tabela profiles
+  const { data: profile } = await supabase
+    .from('profiles')
+    .select('full_name')
+    .eq('id', user.id)
+    .single();
+
+  if (profile?.full_name) {
+    userName = profile.full_name;
+    // Pega a primeira letra do primeiro e último nome
+    const nameParts = userName.trim().split(' ');
+    if (nameParts.length >= 2) {
+      avatarInitials = (nameParts[0][0] + nameParts[nameParts.length - 1][0]).toUpperCase();
+    } else {
+      avatarInitials = userName.substring(0, 2).toUpperCase();
+    }
+  } else {
+    userName = "Usuário MQ";
+    avatarInitials = userEmail.substring(0, 2).toUpperCase();
+  }
+}
+
+const menuItems = [
+  { label: 'Editar Perfil',      href: '/app/editar-perfil' },
+  { label: 'Minhas Anotações',  href: '/app/anotacoes' },
+  { label: 'Favoritos',         href: '/app/favoritos' },
+  { label: 'Notificações',      href: '/app/notificacoes' },
+  { label: 'Link de Afiliação', href: '#', badge: 'AGUARDE', disabled: true },
+  { label: 'Termos de Uso',     href: '/termos' },
+  { label: 'Ajuda',             href: '/ajuda' },
+  { label: 'Suporte',           href: '/suporte' },
 ];
 ---
 
@@ -22,50 +49,65 @@ const legalItems = [
     <!-- Header do perfil -->
     <div class="perfil-header">
       <div class="perfil-avatar">
-        <span class="perfil-avatar__initials">MQ</span>
+        <span class="perfil-avatar__initials">{avatarInitials}</span>
       </div>
       <div class="perfil-identity">
-        <h1 class="perfil-name">Mario Quirino</h1>
-        <p class="perfil-email">mario@mqaccess.com.br</p>
+        <h1 class="perfil-name">{userName}</h1>
+        <p class="perfil-email">{userEmail}</p>
         <span class="badge-gold">Membro PRO</span>
       </div>
     </div>
 
-    <!-- Menu principal -->
-    <nav class="menu-section">
-      {menuItems.map((item) => (
-        <a href={item.href} class="menu-item">
-          <span class="menu-item__label">
-            {item.label}
-            {item.premium && <span class="badge-gold menu-badge">Premium</span>}
-          </span>
-          <svg class="menu-item__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </a>
-      ))}
+    <!-- Menu de Navegação -->
+    <nav class="flex flex-col mt-4">
+      {menuItems.map((item, index) => {
+        const isLast     = index === menuItems.length - 1;
+        const borderCls  = !isLast ? 'border-b border-white/5' : '';
+
+        // ── Item desativado (em breve) ─────────────────────────────────────────
+        if (item.disabled) return (
+          <div class={`flex justify-between items-center py-4 opacity-50 cursor-not-allowed pointer-events-none select-none ${borderCls}`}>
+            <div class="flex items-center gap-2">
+              <span class="font-sans text-sm text-white/50">{item.label}</span>
+              {item.badge && (
+                <span class="border border-neutral-600 text-neutral-400 bg-neutral-800/50 text-[10px] uppercase px-2 py-0.5 rounded">
+                  {item.badge}
+                </span>
+              )}
+            </div>
+            {/* Sem seta — reforça que não há ação */}
+          </div>
+        );
+
+        // ── Item ativo normal ────────────────────────────────────────────────────
+        return (
+          <a
+            href={item.href}
+            class={`flex justify-between items-center py-4 text-white/80 hover:text-white transition-colors ${borderCls}`}
+          >
+            <div class="flex items-center gap-2">
+              <span class="font-sans text-sm">{item.label}</span>
+              {item.badge && (
+                <span class="border border-[#D4AF37]/30 text-[#D4AF37] text-[10px] uppercase px-2 py-0.5 rounded">
+                  {item.badge}
+                </span>
+              )}
+            </div>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" class="text-white/20">
+              <polyline points="9 18 15 12 9 6" />
+            </svg>
+          </a>
+        );
+      })}
+
+      <!-- Botão Sair -->
+      <a 
+        href="/auth/logout" 
+        class="flex justify-between items-center py-4 text-red-500 hover:text-red-400 transition-colors border-t border-white/5 btn-logout-trigger"
+      >
+        <span class="font-sans text-sm">Sair</span>
+      </a>
     </nav>
-
-    <hr class="divider" />
-
-    <!-- Menu legal -->
-    <nav class="menu-section">
-      {legalItems.map((item) => (
-        <a href={item.href} class="menu-item">
-          <span class="menu-item__label">{item.label}</span>
-          <svg class="menu-item__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
-            <polyline points="9 18 15 12 9 6" />
-          </svg>
-        </a>
-      ))}
-    </nav>
-
-    <hr class="divider" />
-
-    <!-- Sair -->
-    <a href="/auth/login" class="menu-item menu-item--destructive" id="logout-btn">
-      <span class="menu-item__label">Sair</span>
-    </a>
 
   </div>
 </AppLayout>
@@ -113,40 +155,5 @@ const legalItems = [
   }
   .perfil-email { font-size: 0.8125rem; color: #4A4A4A; }
 
-  /* Menu sections */
-  .menu-section { display: flex; flex-direction: column; }
-  .menu-section + .divider { margin: 4px 0; }
 
-  .menu-item {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    padding: 16px 4px;
-    text-decoration: none;
-    background: transparent;
-    border: none;
-    cursor: pointer;
-    width: 100%;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    transition: background-color 200ms ease;
-  }
-  .menu-item:last-child { border-bottom: none; }
-  .menu-item:hover { background-color: rgba(255,255,255,0.02); border-radius: 4px; }
-
-  .menu-item__label {
-    display: flex;
-    align-items: center;
-    gap: 10px;
-    font-family: 'Inter', sans-serif;
-    font-size: 0.9375rem;
-    font-weight: 400;
-    color: #F5F5F5;
-  }
-
-  .menu-badge { font-size: 0.625rem; }
-
-  .menu-item__chevron { color: #4A4A4A; flex-shrink: 0; }
-
-  .menu-item--destructive .menu-item__label { color: rgba(239, 68, 68, 0.6); }
-  .menu-item--destructive:hover .menu-item__label { color: #ef4444; }
 </style>

@@ -1,0 +1,783 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+if (!user) return Astro.redirect('/auth/login');
+
+const assessmentId = Astro.url.searchParams.get('id');
+if (!assessmentId) return Astro.redirect('/app/analises');
+
+// ── POST: reset de assessment sabotado ─────────────────────────────────────
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  if (fd.get('action') === 'reset_assessment') {
+    await supabase.from('enneagram_assessments').delete()
+      .eq('id', assessmentId).eq('user_id', user.id);
+    return Astro.redirect('/app/eneagrama/pergunta');
+  }
+}
+
+const { data: assessment, error: assessmentError } = await supabase
+  .from('enneagram_assessments')
+  .select('id, user_id, created_at')
+  .eq('id', assessmentId).eq('user_id', user.id).single();
+
+if (assessmentError || !assessment) return Astro.redirect('/app/analises');
+
+// ── Busca respostas ─────────────────────────────────────────────────────────
+const { data: answers } = await supabase
+  .from('enneagram_answers')
+  .select('enneatype, resposta')
+  .eq('assessment_id', assessmentId);
+
+const safeAnswers = answers ?? [];
+
+// ── Trava de sabotagem ──────────────────────────────────────────────────────
+const isSabotaged =
+  safeAnswers.length === 45 &&
+  safeAnswers.every(a => Number(a.resposta) === Number(safeAnswers[0].resposta));
+
+// ── Motor de cálculo: agrupa por enneatype 1–9 ─────────────────────────────
+const MAX_SCORE = 30; // 5 perguntas × valor máx 6
+const totals: Record<number, number> = {};
+for (let t = 1; t <= 9; t++) totals[t] = 0;
+
+for (const row of safeAnswers) {
+  const t = Number(row.enneatype);
+  if (t >= 1 && t <= 9) totals[t] += Number(row.resposta ?? 0);
+}
+
+const pct = (v: number) => Math.round((v / MAX_SCORE) * 100);
+
+const dimensions = Array.from({ length: 9 }, (_, i) => {
+  const t = i + 1;
+  return { tipo: t, score: totals[t], percent: pct(totals[t]) };
+});
+
+// Perfil predominante
+const dominant = dimensions.reduce((a, b) => b.score > a.score ? b : a);
+
+// ── Dicionário de perfis ────────────────────────────────────────────────────
+const enneagramDict: Record<number, any> = {
+  1: { nome: 'O Perfeccionista', vicio: 'Raiva', estresse: 4, seguranca: 7,
+       resumo: 'Foco em excelência e disciplina. Risco de rigidez extrema e intolerância com erros.',
+       detalhes: 'O Perfeccionista opera sob um forte senso interno de certo e errado. No ambiente corporativo, são pilares de ética e qualidade — os guardiões dos padrões. Sob pressão, porém, tendem a microgerenciar e criticar a equipe de forma desproporcional, bloqueando a velocidade de execução. O desenvolvimento executivo deste tipo passa por aprender que excelência e perfeição são objetivos distintos.' },
+  2: { nome: 'O Prestativo', vicio: 'Orgulho', estresse: 8, seguranca: 4,
+       resumo: 'Empatia e capacidade de motivar. Risco de esquecer próprias necessidades buscando aprovação.',
+       detalhes: 'O Prestativo constrói redes de influência através da generosidade genuína. Em liderança, criam times extremamente leais e motivados. O risco executivo está na tendência de tomar decisões baseadas em aprovação, evitando feedbacks difíceis para não perder vínculos. O crescimento deste perfil exige a calibração entre cuidado com pessoas e clareza de resultados.' },
+  3: { nome: 'O Bem-sucedido', vicio: 'Ganância/Ambição', estresse: 9, seguranca: 6,
+       resumo: 'Foco em metas, resiliência e eficiência. Risco de competitividade tóxica e vaidade.',
+       detalhes: 'O Bem-sucedido é o arquétipo do executor de alta performance — adaptável, magnético e orientado a resultados. No C-Level, são catalisadores de crescimento. O risco está na construção de uma persona de sucesso descolada da identidade real, levando à liderança superficial. A calibragem deste tipo exige autenticidade sobre performance.' },
+  4: { nome: 'O Individualista', vicio: 'Inveja', estresse: 2, seguranca: 1,
+       resumo: 'Criatividade e busca por originalidade. Risco de introspecção excessiva e melancolia.',
+       detalhes: 'O Individualista traz profundidade criativa e visão única ao ambiente corporativo. São os inovadores que enxergam o que outros ignoram. O risco executivo está na instabilidade emocional e na tendência de sabotar oportunidades por sentir que o trabalho "não os representa". O desenvolvimento passa por ancorar a criatividade em processos e metas concretas.' },
+  5: { nome: 'O Observador', vicio: 'Avareza', estresse: 7, seguranca: 8,
+       resumo: 'Perfil analítico e estrategista. Risco de isolamento e frieza emocional sob pressão.',
+       detalhes: 'O Observador é o estrategista silencioso — analítico, autossuficiente e com capacidade singular de síntese de informações complexas. Em posições de liderança, produzem planos de alta precisão. O ponto cego é a tendência ao isolamento e à retenção de conhecimento, o que fragiliza times e processos. O avanço executivo exige presença e compartilhamento ativo.' },
+  6: { nome: 'O Questionador', vicio: 'Medo', estresse: 3, seguranca: 9,
+       resumo: 'Cautela, lealdade e previsão de riscos. Risco de ansiedade paralisante e pessimismo.',
+       detalhes: 'O Questionador é o gestor de risco natural da organização — leal, sistemático e extraordinariamente capaz de antecipar crises. Em equipes, criam estruturas sólidas e confiáveis. O limitador executivo é a paralisia analítica: a busca excessiva por segurança antes de agir pode custar janelas de oportunidade críticas. O desenvolvimento requer confiança na própria competência.' },
+  7: { nome: 'O Otimista', vicio: 'Gula', estresse: 1, seguranca: 5,
+       resumo: 'Proatividade, criatividade e adaptabilidade. Risco de dispersão e fuga de rotinas.',
+       detalhes: 'O Otimista é o catalisador de energia e inovação — visionário, entusiasta e com capacidade única de transformar ambientes estagnados. Em liderança, são motores de cultura. O risco executivo está na dificuldade de manter foco em projetos de longa duração e na fuga de situações desconfortáveis via novas ideias. O crescimento exige disciplina de execução e tolerância ao desconforto.' },
+  8: { nome: 'O Líder', vicio: 'Luxúria/Excesso', estresse: 5, seguranca: 2,
+       resumo: 'Dinamismo, objetividade e liderança nata. Risco de autoritarismo e insensibilidade.',
+       detalhes: 'O Líder é o arquétipo do executivo de comando — decisivo, protetor dos seus e com presença que domina ambientes. Em crises, são os primeiros a avançar. O ponto cego está na intensidade: a tendência à confrontação direta e ao excesso de controle pode intimidar talentos e criar culturas de medo. O desenvolvimento deste perfil passa pela inteligência emocional aplicada ao poder.' },
+  9: { nome: 'O Mediador', vicio: 'Indolência', estresse: 6, seguranca: 3,
+       resumo: 'Capacidade mediadora e agregadora. Risco de omissão, apatia e fuga de conflitos.',
+       detalhes: 'O Mediador é o arquiteto da harmonia corporativa — empático, integrador e capaz de unir visões opostas em torno de um propósito comum. Em ambientes de alta tensão, são âncoras de equilíbrio. O risco executivo é a tendência à omissão: evitar conflitos necessários, postergar decisões difíceis e perder a própria agenda em prol da coletividade. O crescimento exige presença e assertividade estratégica.' },
+};
+
+const perfil          = enneagramDict[dominant.tipo];
+const perfilEstresse  = enneagramDict[perfil.estresse];
+const perfilSeguranca = enneagramDict[perfil.seguranca];
+
+const completedDate = new Date(assessment.created_at).toLocaleDateString('pt-BR', {
+  day: '2-digit', month: 'long', year: 'numeric',
+});
+
+// Radar chart: 9 pontos distribuídos em 360°
+const chartData = dimensions.map(d => ({ label: String(d.tipo), value: d.percent }));
+
+// ── Tríades: Motores de Inteligência (Centros do Eneagrama) ─────────────────
+const motorExecucao  = Math.round(((totals[8] + totals[9] + totals[1]) / 90) * 100);
+const motorConexao   = Math.round(((totals[2] + totals[3] + totals[4]) / 90) * 100);
+const motorVisao     = Math.round(((totals[5] + totals[6] + totals[7]) / 90) * 100);
+
+// ── DNA de Ação (Estilos Hornevianos) ───────────────────────────────────────
+const dnaAssertivo   = Math.round(((totals[3] + totals[7] + totals[8]) / 90) * 100);
+const dnaEstruturado = Math.round(((totals[1] + totals[2] + totals[6]) / 90) * 100);
+const dnaEstrategista= Math.round(((totals[4] + totals[5] + totals[9]) / 90) * 100);
+
+// ── Cross-sell: Recomendação de Livro ───────────────────────────────────────
+const bookRecommendations: Record<number, string> = {
+  1: '631ee11f-9835-463d-9259-1fcb505cb46d',
+  2: '1015df84-c597-4b37-9d27-357a39d353d2',
+  3: '631ee11f-9835-463d-9259-1fcb505cb46d',
+  4: '1015df84-c597-4b37-9d27-357a39d353d2',
+  5: '631ee11f-9835-463d-9259-1fcb505cb46d',
+  6: '1015df84-c597-4b37-9d27-357a39d353d2',
+  7: '1015df84-c597-4b37-9d27-357a39d353d2',
+  8: '631ee11f-9835-463d-9259-1fcb505cb46d',
+  9: '1015df84-c597-4b37-9d27-357a39d353d2',
+};
+
+const recommendedBookId = bookRecommendations[dominant.tipo];
+const { data: recommendedBook } = await supabase
+  .from('products')
+  .select('id, title, cover_url')
+  .eq('id', recommendedBookId)
+  .maybeSingle();
+---
+
+<AppLayout
+  title={isSabotaged ? 'Análise Inconclusiva — Eneagrama' : `Relatório: Tipo ${dominant.tipo} — ${perfil.nome}`}
+  activeNav="analises"
+>
+  <div class="report-page">
+
+    <!-- Header -->
+    <div class="report-header">
+      <a href="/app/analises" class="report-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Voltar às Análises
+      </a>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:8px;">
+        <h1 class="report-title">Relatório: Eneagrama</h1>
+        {completedDate && <span style="font-size:0.75rem; color:#4A4A4A;">{completedDate}</span>}
+      </div>
+    </div>
+
+    {isSabotaged ? (
+      <!-- Card Sabotagem -->
+      <section class="sabotage-card">
+        <div class="sabotage-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="#EF4444" stroke-width="1.5">
+            <path d="M10.29 3.86L1.82 18a2 2 0 0 0 1.71 3h16.94a2 2 0 0 0 1.71-3L13.71 3.86a2 2 0 0 0-3.42 0z"/>
+            <line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/>
+          </svg>
+        </div>
+        <p class="sabotage-label">ANÁLISE INCONCLUSIVA</p>
+        <h2 class="sabotage-title">Padrão de Resposta Irreal Detectado</h2>
+        <p class="sabotage-desc">
+          Identificamos respostas com padrão estatisticamente improvável. Para gerar um perfil preciso,
+          responda com sinceridade às situações propostas.
+        </p>
+        <div class="sabotage-cta">
+          <form method="POST">
+            <input type="hidden" name="action" value="reset_assessment" />
+            <button type="submit" class="btn-reset">
+              <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 4v6h-6"/><path d="M1 20v-6h6"/><path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/></svg>
+              Refazer Mapeamento
+            </button>
+          </form>
+          <a href="/app/analises" class="sabotage-cancel">Cancelar</a>
+        </div>
+      </section>
+    ) : (
+      <div class="report-body">
+
+        <!-- Veredito -->
+        <section class="report-verdict">
+          <p class="verdict-eyebrow">TIPO {dominant.tipo} — PERFIL PREDOMINANTE</p>
+          <h2 class="verdict-title">{perfil.nome}</h2>
+          <p class="verdict-desc">{perfil.resumo}</p>
+
+          <!-- Radar Chart SVG 9 eixos -->
+          <div class="radar-wrap" aria-hidden="true">
+            <svg class="radar-svg" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+              {[20,40,60,80,100].map(r => {
+                const s = r * 0.95;
+                const pts = chartData.map((_,i) => {
+                  const a = (Math.PI*2/9)*i - Math.PI/2;
+                  return `${120+Math.cos(a)*s},${120+Math.sin(a)*s}`;
+                }).join(' ');
+                return <polygon points={pts} fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>;
+              })}
+              {chartData.map((_,i) => {
+                const a = (Math.PI*2/9)*i - Math.PI/2;
+                return <line x1="120" y1="120" x2={120+Math.cos(a)*95} y2={120+Math.sin(a)*95} stroke="rgba(255,255,255,0.07)" stroke-width="1"/>;
+              })}
+              <polygon
+                points={chartData.map((d,i) => {
+                  const a = (Math.PI*2/9)*i - Math.PI/2;
+                  const r = (d.value/100)*95;
+                  return `${120+Math.cos(a)*r},${120+Math.sin(a)*r}`;
+                }).join(' ')}
+                fill="rgba(212,175,55,0.13)"
+                stroke="#D4AF37"
+                stroke-width="2"
+              />
+              {chartData.map((d,i) => {
+                const a  = (Math.PI*2/9)*i - Math.PI/2;
+                const r  = (d.value/100)*95;
+                const lx = 120+Math.cos(a)*110;
+                const ly = 120+Math.sin(a)*110;
+                return (
+                  <>
+                    <circle cx={120+Math.cos(a)*r} cy={120+Math.sin(a)*r} r="4" fill="#D4AF37"/>
+                    <text x={lx} y={ly} text-anchor="middle" dominant-baseline="middle" fill="#C9A96E" font-size="10" font-family="Inter,sans-serif" font-weight="700">{d.label}</text>
+                  </>
+                );
+              })}
+            </svg>
+          </div>
+        </section>
+
+        <!-- Distribuição por tipo -->
+        <section class="report-section">
+          <h3 class="section-title">Distribuição por Tipo
+            <span style="font-size:0.65rem; font-weight:400; color:#3A3A3A; margin-left:8px; text-transform:none; letter-spacing:0;">clique para expandir</span>
+          </h3>
+          <div class="chart-container">
+            {dimensions.map(d => (
+              <div class="bar-group bar-group--clickable" data-tipo={d.tipo} role="button" tabindex="0" aria-label={`Ver detalhes do Tipo ${d.tipo}`}>
+                <div class="bar-header">
+                  <span class="bar-label">Tipo {d.tipo} — {enneagramDict[d.tipo].nome}</span>
+                  <span class="bar-pct">{d.percent}%</span>
+                </div>
+                <div class="bar-track">
+                  <div
+                    class={`bar-fill ${d.tipo === dominant.tipo ? 'bar-fill--dominant' : ''}`}
+                    style={`width:${d.percent}%`}
+                  ></div>
+                </div>
+              </div>
+            ))}
+          </div>
+        </section>
+
+        <!-- ── Arquitetura Decisória ── -->
+        <section class="report-section">
+          <h3 class="section-title">Arquitetura Decisória</h3>
+          <p class="section-sub">Centros de Inteligência que guiam suas decisões</p>
+          <div class="motor-grid">
+
+            <div class="motor-card">
+              <div class="motor-header">
+                <span class="motor-icon">⚡</span>
+                <div>
+                  <p class="motor-label">MOTOR DE EXECUÇÃO</p>
+                  <p class="motor-name">Ação</p>
+                </div>
+                <span class="motor-pct">{motorExecucao}%</span>
+              </div>
+              <div class="motor-track">
+                <div class="motor-fill motor-fill--gold" style={`width:${motorExecucao}%`}></div>
+              </div>
+              <p class="motor-sub">Foco em resultados, território e ordem.</p>
+            </div>
+
+            <div class="motor-card">
+              <div class="motor-header">
+                <span class="motor-icon">❤</span>
+                <div>
+                  <p class="motor-label">MOTOR DE CONEXÃO</p>
+                  <p class="motor-name">Pessoas</p>
+                </div>
+                <span class="motor-pct">{motorConexao}%</span>
+              </div>
+              <div class="motor-track">
+                <div class="motor-fill motor-fill--crimson" style={`width:${motorConexao}%`}></div>
+              </div>
+              <p class="motor-sub">Foco em networking, empatia e influência.</p>
+            </div>
+
+            <div class="motor-card">
+              <div class="motor-header">
+                <span class="motor-icon">◆</span>
+                <div>
+                  <p class="motor-label">MOTOR DE VISÃO</p>
+                  <p class="motor-name">Estratégia</p>
+                </div>
+                <span class="motor-pct">{motorVisao}%</span>
+              </div>
+              <div class="motor-track">
+                <div class="motor-fill motor-fill--violet" style={`width:${motorVisao}%`}></div>
+              </div>
+              <p class="motor-sub">Foco em dados, inovação e planejamento.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- ── DNA de Ação Corporativa ── -->
+        <section class="report-section">
+          <h3 class="section-title">DNA de Ação Corporativa</h3>
+          <p class="section-sub">Estilos Hornevianos — padrão de movimento sob pressão</p>
+          <div class="dna-list">
+
+            <div class="dna-row">
+              <div class="dna-row-header">
+                <div>
+                  <span class="dna-badge dna-badge--gold">ASSERTIVO</span>
+                  <span class="dna-name">Perfil Expansivo (Lobo)</span>
+                </div>
+                <span class="dna-pct">{dnaAssertivo}%</span>
+              </div>
+              <div class="dna-track">
+                <div class="dna-fill dna-fill--gold" style={`width:${dnaAssertivo}%`}></div>
+              </div>
+              <p class="dna-desc">Move-se contra os obstáculos para expandir e dominar o ambiente.</p>
+            </div>
+
+            <div class="dna-row">
+              <div class="dna-row-header">
+                <div>
+                  <span class="dna-badge dna-badge--slate">ESTRUTURADO</span>
+                  <span class="dna-name">Perfil Conformista (Cordeiro)</span>
+                </div>
+                <span class="dna-pct">{dnaEstruturado}%</span>
+              </div>
+              <div class="dna-track">
+                <div class="dna-fill dna-fill--slate" style={`width:${dnaEstruturado}%`}></div>
+              </div>
+              <p class="dna-desc">Move-se com o sistema para garantir estabilidade e aprovação.</p>
+            </div>
+
+            <div class="dna-row">
+              <div class="dna-row-header">
+                <div>
+                  <span class="dna-badge dna-badge--violet">ESTRATEGISTA</span>
+                  <span class="dna-name">Perfil Observador (Estrategista)</span>
+                </div>
+                <span class="dna-pct">{dnaEstrategista}%</span>
+              </div>
+              <div class="dna-track">
+                <div class="dna-fill dna-fill--violet" style={`width:${dnaEstrategista}%`}></div>
+              </div>
+              <p class="dna-desc">Move-se para longe do caos para analisar, planejar e agir com precisão.</p>
+            </div>
+
+          </div>
+        </section>
+
+        <!-- Dinâmica de Estresse e Segurança -->
+        <section class="report-section">
+          <h3 class="section-title">Dinâmica de Movimento</h3>
+          <div class="movement-grid">
+            <div class="movement-card movement-card--stress">
+              <p class="movement-label">⚠ Sob Estresse</p>
+              <p class="movement-type">Tipo {perfil.estresse}</p>
+              <p class="movement-name">{perfilEstresse.nome}</p>
+              <p class="movement-desc">Quando pressionado, você pode assumir os padrões negativos deste tipo.</p>
+            </div>
+            <div class="movement-card movement-card--security">
+              <p class="movement-label">✦ Em Segurança</p>
+              <p class="movement-type">Tipo {perfil.seguranca}</p>
+              <p class="movement-name">{perfilSeguranca.nome}</p>
+              <p class="movement-desc">Em ambientes de confiança, você expressa as qualidades mais elevadas deste tipo.</p>
+            </div>
+          </div>
+        </section>
+
+        <!-- Vício Central -->
+        <section class="report-section">
+          <h3 class="section-title">Padrão de Sombra</h3>
+          <div class="shadow-card">
+            <p class="shadow-label">VÍCIO CENTRAL</p>
+            <p class="shadow-vicio">{perfil.vicio}</p>
+            <p class="shadow-desc">
+              O vício central é o padrão automático que emerge quando o Tipo {dominant.tipo} opera
+              fora de sua zona de consciência. Reconhecê-lo é o primeiro passo para a calibragem executiva.
+            </p>
+          </div>
+        </section>
+
+        <!-- Recomendação de Leitura -->
+        {recommendedBook && (
+          <section class="report-section">
+            <h3 class="section-title">Recomendação de Leitura — {perfil.nome}</h3>
+            <div class="book-card">
+              <div class="book-cover-wrap">
+                {recommendedBook.cover_url
+                  ? <img src={recommendedBook.cover_url} alt={recommendedBook.title} class="book-cover" />
+                  : <div class="book-cover-placeholder"><span>MQ</span></div>
+                }
+              </div>
+              <div class="book-info">
+                <p class="book-eyebrow">LEITURA RECOMENDADA</p>
+                <p class="book-title">{recommendedBook.title}</p>
+                <p class="book-desc">A leitura certa para o estágio de desenvolvimento do Tipo {dominant.tipo}. Cada página foi calibrada para ampliar sua consciência executiva.</p>
+                <a
+                  href={`/app/detalhes?id=${recommendedBook.id}`}
+                  class="book-cta"
+                >
+                  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"/><line x1="3" y1="6" x2="21" y2="6"/><path d="M16 10a4 4 0 0 1-8 0"/></svg>
+                  ADQUIRIR LIVRO FÍSICO
+                </a>
+              </div>
+            </div>
+          </section>
+        )}
+
+      </div>
+    )}
+
+  </div>
+</AppLayout>
+
+<!-- ── Modal Deep Dive ── -->
+<div id="type-modal" style="display:none;" class="modal-overlay">
+  <div class="modal-card">
+    <button id="close-modal" class="modal-close" aria-label="Fechar">✕</button>
+    <p id="modal-eyebrow" class="modal-eyebrow"></p>
+    <h3 id="modal-title" class="modal-title"></h3>
+    <p id="modal-desc" class="modal-desc"></p>
+  </div>
+</div>
+
+<script define:vars={{ dict: enneagramDict }}>
+  var modal     = document.getElementById('type-modal');
+  var mEyebrow  = document.getElementById('modal-eyebrow');
+  var mTitle    = document.getElementById('modal-title');
+  var mDesc     = document.getElementById('modal-desc');
+  var closeBtn  = document.getElementById('close-modal');
+
+  function openModal(tipo) {
+    var entry = dict[Number(tipo)];
+    if (!entry || !modal) return;
+    mEyebrow.textContent = 'TIPO ' + tipo + ' — ANÁLISE EXECUTIVA';
+    mTitle.textContent   = entry.nome;
+    mDesc.textContent    = entry.detalhes || entry.resumo;
+    modal.style.display  = 'flex';
+    document.body.style.overflow = 'hidden';
+  }
+
+  function closeModal() {
+    if (!modal) return;
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  document.querySelectorAll('.bar-group--clickable').forEach(function(row) {
+    row.addEventListener('click', function() { openModal(row.dataset.tipo); });
+    row.addEventListener('keydown', function(e) { if (e.key === 'Enter' || e.key === ' ') openModal(row.dataset.tipo); });
+  });
+
+  if (closeBtn) closeBtn.addEventListener('click', closeModal);
+  if (modal)    modal.addEventListener('click', function(e) { if (e.target === modal) closeModal(); });
+  document.addEventListener('keydown', function(e) { if (e.key === 'Escape') closeModal(); });
+</script>
+
+<style>
+  /* ── Motores de Inteligência ── */
+  .section-sub { font-size: 0.8125rem; color: #3A3A3A; margin-top: -10px; margin-bottom: 16px; }
+
+  /* ── Bar clickable ── */
+  .bar-group--clickable {
+    cursor: pointer;
+    padding: 8px;
+    border-radius: 8px;
+    transition: background 150ms ease;
+    margin: 0 -8px;
+  }
+  .bar-group--clickable:hover { background: rgba(255,255,255,0.03); }
+
+  /* ── Modal ── */
+  .modal-overlay {
+    position: fixed; inset: 0; z-index: 100;
+    background: rgba(0,0,0,0.85);
+    backdrop-filter: blur(6px);
+    display: flex; align-items: center; justify-content: center;
+    padding: 16px;
+    animation: fadeIn 200ms ease;
+  }
+  @keyframes fadeIn { from { opacity: 0; } to { opacity: 1; } }
+  .modal-card {
+    background: #0E0E0E;
+    border: 1px solid rgba(255,255,255,0.1);
+    border-radius: 20px;
+    padding: 32px 28px;
+    max-width: 520px; width: 100%;
+    position: relative;
+    animation: slideUp 220ms ease;
+  }
+  @keyframes slideUp { from { transform: translateY(16px); opacity: 0; } to { transform: translateY(0); opacity: 1; } }
+  .modal-close {
+    position: absolute; top: 16px; right: 16px;
+    background: none; border: none;
+    color: #3A3A3A; font-size: 1rem; cursor: pointer;
+    padding: 4px 8px; border-radius: 6px;
+    transition: color 150ms, background 150ms;
+  }
+  .modal-close:hover { color: #F5F5F5; background: rgba(255,255,255,0.06); }
+  .modal-eyebrow {
+    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #C9A96E; margin-bottom: 8px;
+  }
+  .modal-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.5rem; font-weight: 700; color: #F5F5F5; margin-bottom: 16px;
+  }
+  .modal-desc {
+    font-size: 0.9rem; color: #6A6A6A; line-height: 1.75;
+  }
+
+  /* ── Book card ── */
+  .book-card {
+    display: flex; gap: 20px;
+    background: #080808;
+    border: 1px solid rgba(212,175,55,0.12);
+    border-radius: 14px; padding: 20px;
+  }
+  @media (max-width: 480px) { .book-card { flex-direction: column; } }
+  .book-cover-wrap { flex-shrink: 0; }
+  .book-cover {
+    width: 90px; height: 130px;
+    object-fit: cover; border-radius: 8px;
+    box-shadow: 0 8px 24px rgba(0,0,0,0.5);
+  }
+  .book-cover-placeholder {
+    width: 90px; height: 130px; border-radius: 8px;
+    background: rgba(212,175,55,0.08);
+    border: 1px solid rgba(212,175,55,0.15);
+    display: flex; align-items: center; justify-content: center;
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem; color: #C9A96E;
+  }
+  .book-info { display: flex; flex-direction: column; gap: 8px; flex: 1; }
+  .book-eyebrow {
+    font-size: 0.6rem; font-weight: 700; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #C9A96E;
+  }
+  .book-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem; font-weight: 700; color: #F5F5F5; line-height: 1.3;
+  }
+  .book-desc { font-size: 0.8rem; color: #4A4A4A; line-height: 1.6; flex: 1; }
+  .book-cta {
+    display: inline-flex; align-items: center; gap: 8px;
+    background: #D4AF37; color: #000;
+    font-family: 'Inter', sans-serif; font-size: 0.75rem; font-weight: 700;
+    letter-spacing: 0.1em; text-decoration: none;
+    padding: 10px 18px; border-radius: 8px; width: fit-content;
+    transition: background 200ms;
+    margin-top: auto;
+  }
+  .book-cta:hover { background: #F0D080; }
+
+  .motor-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 600px) { .motor-grid { grid-template-columns: 1fr; } }
+
+  .motor-card {
+    background: #080808;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 18px 16px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+  }
+  .motor-header {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+  }
+  .motor-icon {
+    font-size: 1rem;
+    line-height: 1;
+    margin-top: 2px;
+    flex-shrink: 0;
+  }
+  .motor-label {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    color: #3A3A3A;
+    margin-bottom: 2px;
+  }
+  .motor-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: #F5F5F5;
+  }
+  .motor-pct {
+    margin-left: auto;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #C9A96E;
+    flex-shrink: 0;
+  }
+  .motor-track {
+    height: 4px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .motor-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 700ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .motor-fill--gold    { background: linear-gradient(90deg, #8C6D3F, #D4AF37); }
+  .motor-fill--crimson { background: linear-gradient(90deg, #7f1d1d, #ef4444); }
+  .motor-fill--violet  { background: linear-gradient(90deg, #3b0764, #7c3aed); }
+  .motor-sub {
+    font-size: 0.75rem;
+    color: #3A3A3A;
+    line-height: 1.5;
+  }
+
+  /* ── DNA de Ação ── */
+  .dna-list { display: flex; flex-direction: column; gap: 20px; }
+  .dna-row { display: flex; flex-direction: column; gap: 8px; }
+  .dna-row-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .dna-row-header > div { display: flex; align-items: center; gap: 10px; }
+  .dna-badge {
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    padding: 3px 8px;
+    border-radius: 4px;
+    flex-shrink: 0;
+  }
+  .dna-badge--gold   { background: rgba(212,175,55,0.1);  border: 1px solid rgba(212,175,55,0.25); color: #D4AF37; }
+  .dna-badge--slate  { background: rgba(100,116,139,0.1); border: 1px solid rgba(100,116,139,0.25); color: #94a3b8; }
+  .dna-badge--violet { background: rgba(124,58,237,0.1);  border: 1px solid rgba(124,58,237,0.25); color: #a78bfa; }
+  .dna-name { font-size: 0.875rem; color: #A0A0A0; }
+  .dna-pct  { font-size: 1rem; font-weight: 700; color: #F5F5F5; flex-shrink: 0; }
+  .dna-track {
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 999px;
+    overflow: hidden;
+  }
+  .dna-fill {
+    height: 100%;
+    border-radius: 999px;
+    transition: width 700ms cubic-bezier(0.4,0,0.2,1);
+  }
+  .dna-fill--gold   { background: linear-gradient(90deg, #8C6D3F, #D4AF37); }
+  .dna-fill--slate  { background: linear-gradient(90deg, #334155, #64748b); }
+  .dna-fill--violet { background: linear-gradient(90deg, #3b0764, #7c3aed); }
+  .dna-desc { font-size: 0.75rem; color: #3A3A3A; line-height: 1.55; }
+
+  /* ── Base styles ── */
+  .report-page {
+    padding: 24px 16px 60px;
+    max-width: 768px;
+    margin: 0 auto;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Header */
+  .report-header { margin-bottom: 32px; }
+  .report-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.8125rem; color: #3A3A3A; text-decoration: none;
+    margin-bottom: 16px; transition: color 200ms;
+  }
+  .report-back:hover { color: #A0A0A0; }
+  .report-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 700; color: #F5F5F5; line-height: 1.1;
+  }
+
+  /* Verdict */
+  .report-verdict {
+    background: #060606;
+    border: 1px solid rgba(212,175,55,0.15);
+    border-radius: 16px; padding: 32px 24px;
+    margin-bottom: 24px; text-align: center;
+  }
+  .verdict-eyebrow {
+    font-size: 0.6875rem; font-weight: 700;
+    letter-spacing: 0.18em; color: #C9A96E;
+    text-transform: uppercase; margin-bottom: 8px;
+  }
+  .verdict-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.75rem, 5vw, 2.5rem);
+    font-weight: 700; color: #F5F5F5; margin-bottom: 16px;
+  }
+  .verdict-desc { font-size: 0.9375rem; color: #6A6A6A; line-height: 1.7; max-width: 520px; margin: 0 auto; }
+
+  /* Radar */
+  .radar-wrap { display: flex; justify-content: center; margin-top: 28px; }
+  .radar-svg  { width: 240px; height: 240px; overflow: visible; }
+
+  /* Section */
+  .report-section { margin-bottom: 28px; }
+  .report-body { display: contents; }
+  .section-title {
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #3A3A3A; margin-bottom: 16px;
+  }
+
+  /* Bars */
+  .chart-container { display: flex; flex-direction: column; gap: 10px; }
+  .bar-group { display: flex; flex-direction: column; gap: 5px; }
+  .bar-header { display: flex; justify-content: space-between; }
+  .bar-label  { font-size: 0.8125rem; color: #6A6A6A; }
+  .bar-pct    { font-size: 0.8125rem; color: #3A3A3A; font-weight: 600; }
+  .bar-track  { height: 4px; background: rgba(255,255,255,0.05); border-radius: 999px; overflow: hidden; }
+  .bar-fill   { height: 100%; background: rgba(255,255,255,0.12); border-radius: 999px; transition: width 600ms ease; }
+  .bar-fill--dominant { background: linear-gradient(90deg, #C9A96E, #D4AF37); }
+
+  /* Movement grid */
+  .movement-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 12px; }
+  @media (max-width: 480px) { .movement-grid { grid-template-columns: 1fr; } }
+
+  .movement-card {
+    background: #080808; border-radius: 12px;
+    padding: 20px 18px; border: 1px solid rgba(255,255,255,0.05);
+  }
+  .movement-card--stress   { border-top: 2px solid rgba(239,68,68,0.4); }
+  .movement-card--security { border-top: 2px solid rgba(74,222,128,0.3); }
+  .movement-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em; margin-bottom: 8px; color: #4A4A4A; }
+  .movement-card--stress   .movement-label { color: #EF4444; }
+  .movement-card--security .movement-label { color: #4ade80; }
+  .movement-type { font-size: 0.75rem; color: #3A3A3A; margin-bottom: 2px; }
+  .movement-name { font-family: 'Playfair Display', serif; font-size: 1.1rem; color: #F5F5F5; margin-bottom: 8px; }
+  .movement-desc { font-size: 0.8125rem; color: #4A4A4A; line-height: 1.55; }
+
+  /* Shadow card */
+  .shadow-card {
+    background: #080808; border: 1px solid rgba(239,68,68,0.1);
+    border-left: 3px solid rgba(239,68,68,0.5);
+    border-radius: 12px; padding: 24px 20px;
+  }
+  .shadow-label { font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.14em; color: #EF4444; margin-bottom: 6px; }
+  .shadow-vicio { font-family: 'Playfair Display', serif; font-size: 1.5rem; color: #F5F5F5; margin-bottom: 12px; }
+  .shadow-desc  { font-size: 0.875rem; color: #5A5A5A; line-height: 1.65; }
+
+  /* Sabotage */
+  .sabotage-card {
+    background: #0A0A0A; border: 1px solid rgba(239,68,68,0.25);
+    border-radius: 16px; padding: 40px 32px;
+    text-align: center; display: flex; flex-direction: column; align-items: center; gap: 16px;
+  }
+  .sabotage-icon {
+    width: 64px; height: 64px; border-radius: 50%;
+    background: rgba(239,68,68,0.08); border: 1px solid rgba(239,68,68,0.2);
+    display: flex; align-items: center; justify-content: center; margin-bottom: 8px;
+  }
+  .sabotage-label { font-size: 0.7rem; font-weight: 700; letter-spacing: 0.18em; color: #EF4444; text-transform: uppercase; }
+  .sabotage-title { font-family: 'Playfair Display', serif; font-size: 1.75rem; font-weight: 700; color: #F5F5F5; }
+  .sabotage-desc  { font-size: 0.9375rem; color: #6A6A6A; line-height: 1.7; max-width: 480px; }
+  .sabotage-cta   { display: flex; flex-direction: column; align-items: center; gap: 12px; width: 100%; max-width: 320px; }
+  .btn-reset {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; padding: 14px 24px; background: #D4AF37; color: #000;
+    font-family: 'Inter', sans-serif; font-size: 0.875rem; font-weight: 700;
+    letter-spacing: 0.08em; border: none; border-radius: 10px; cursor: pointer;
+    transition: background 200ms;
+  }
+  .btn-reset:hover { background: #F5F5F5; }
+  .sabotage-cancel { font-size: 0.8125rem; color: #3A3A3A; text-decoration: none; transition: color 200ms; }
+  .sabotage-cancel:hover { color: #A0A0A0; }
+</style>

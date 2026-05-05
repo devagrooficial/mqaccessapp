@@ -1,0 +1,447 @@
+---
+import AppLayout from '../layouts/AppLayout.astro';
+
+// ── Cliente SSR autenticado via middleware (cookies → RLS) ─────────────────────
+// Nota: /suporte fica fora do /app/ mas o middleware ainda injeta locals.supabase
+// com os cookies da requisição, então getUser() aqui funcionaria corretamente.
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/auth/login');
+}
+
+// ── POST: Abrir chamado com anexo opcional ────────────────────────────────
+if (Astro.request.method === 'POST') {
+  try {
+    const formData   = await Astro.request.formData();
+    const subject    = formData.get('subject') as string;
+    const message    = formData.get('message') as string;
+    const attachment = formData.get('attachment') as File | null;
+
+    if (!subject || !message) throw new Error('Assunto e mensagem são obrigatórios.');
+
+    let attachmentUrl: string | null = null;
+
+    if (attachment && attachment.size > 0) {
+      const ext      = attachment.name.split('.').pop();
+      const filePath = `${user.id}/${Math.random().toString(36).substring(2)}.${ext}`;
+
+      const { error: uploadError } = await supabase.storage
+        .from('support_attachments')
+        .upload(filePath, attachment);
+
+      if (uploadError) throw uploadError;
+
+      const { data: pub } = supabase.storage
+        .from('support_attachments')
+        .getPublicUrl(filePath);
+
+      attachmentUrl = pub.publicUrl;
+    }
+
+    const { error: insertError } = await supabase
+      .from('support_tickets')
+      .insert({
+        user_id:        user.id,
+        subject,
+        message,
+        attachment_url: attachmentUrl,
+        status:         'Aberto',
+      });
+
+    if (insertError) throw insertError;
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message ?? 'Erro desconhecido' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// ── GET: Histórico de chamados ────────────────────────────────────────────
+type Ticket = {
+  id: string;
+  subject: string;
+  message: string;
+  status: string;
+  created_at: string;
+};
+
+let chamados: Ticket[] = [];
+
+const { data, error } = await supabase
+  .from('support_tickets')
+  .select('id, subject, message, status, created_at')
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false });
+
+if (error) {
+  console.error('[MQ] Erro ao buscar chamados:', error.message);
+} else if (data) {
+  chamados = data as Ticket[];
+}
+
+function formatDate(iso: string): string {
+  return new Intl.DateTimeFormat('pt-BR', {
+    day: '2-digit', month: 'short',
+    hour: '2-digit', minute: '2-digit',
+  }).format(new Date(iso));
+}
+
+type StatusKey = 'Aberto' | 'Em Análise' | 'Respondido' | 'Fechado' | 'Resolvido';
+
+const statusMap: Record<StatusKey, { color: string; bg: string; border: string }> = {
+  'Aberto':     { color: '#EAB308', bg: 'rgba(234,179,8,0.08)',    border: 'rgba(234,179,8,0.2)'    },
+  'Em Análise': { color: '#60A5FA', bg: 'rgba(96,165,250,0.08)',  border: 'rgba(96,165,250,0.2)'  },
+  'Respondido': { color: '#4ADE80', bg: 'rgba(74,222,128,0.08)', border: 'rgba(74,222,128,0.2)' },
+  'Fechado':    { color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)' },
+  'Resolvido':  { color: 'rgba(255,255,255,0.4)', bg: 'rgba(255,255,255,0.04)', border: 'rgba(255,255,255,0.08)' },
+};
+
+function getStatus(s: string) {
+  return statusMap[s as StatusKey] ?? statusMap['Fechado'];
+}
+---
+
+<AppLayout title="Atendimento e Suporte">
+  <div class="suporte-page">
+
+    <!-- HEADER -->
+    <header class="suporte-header">
+      <a href="/app/perfil" class="suporte-back-btn" aria-label="Voltar">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <h1 class="suporte-title">Atendimento</h1>
+    </header>
+
+    <!-- BLOCO 1: FORMULÁRIO -->
+    <div class="suporte-card">
+      <h2 class="suporte-card__title">Como podemos te ajudar hoje?</h2>
+      <p class="suporte-card__sla">
+        <svg xmlns="http://www.w3.org/2000/svg" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+        Nossa equipe responde em até 2 horas úteis.
+      </p>
+
+      <form id="form-suporte" class="suporte-form">
+
+        <!-- Assunto -->
+        <div class="field-group">
+          <label for="subject" class="field-label">Qual o motivo do contato?</label>
+          <div class="select-wrapper">
+            <select id="subject" name="subject" required class="field-select">
+              <option value="" disabled selected>Selecione uma opção...</option>
+              <option value="Dúvida Técnica">Dúvida Técnica (Acesso, Player, Plataforma)</option>
+              <option value="Problema Financeiro">Financeiro (Faturas, Cartão, Assinatura)</option>
+              <option value="Sugestão de Aula">Sugestão de Conteúdo</option>
+              <option value="Outros">Outros Assuntos</option>
+            </select>
+            <span class="select-chevron" aria-hidden="true">
+              <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="6 9 12 15 18 9"/></svg>
+            </span>
+          </div>
+        </div>
+
+        <!-- Mensagem -->
+        <div class="field-group">
+          <label for="message" class="field-label">Descreva sua necessidade em detalhes</label>
+          <textarea id="message" name="message" required rows="5" class="field-textarea" placeholder="Digite sua mensagem aqui..."></textarea>
+        </div>
+
+        <!-- Anexo -->
+        <div class="field-group">
+          <label class="field-label">Anexar imagem ou documento <span class="field-label--opt">(Opcional)</span></label>
+          <label for="attachment" class="dropzone" id="dropzone-label">
+            <svg xmlns="http://www.w3.org/2000/svg" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m21.44 11.05-9.19 9.19a6 6 0 0 1-8.49-8.49l8.57-8.57A4 4 0 1 1 18 8.84l-8.59 8.57a2 2 0 0 1-2.83-2.83l8.49-8.48"/></svg>
+            <span id="file-name">Clique para selecionar um arquivo</span>
+            <input type="file" id="attachment" name="attachment" accept="image/*,.pdf" class="dropzone__input" />
+          </label>
+        </div>
+
+        <hr class="suporte-divider" />
+
+        <!-- Feedback + Botão -->
+        <div class="suporte-actions">
+          <span id="suporte-feedback" class="suporte-feedback" style="display:none;"></span>
+          <button type="submit" id="btn-enviar" class="btn-enviar">
+            <span id="btn-label">Abrir Chamado</span>
+            <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m22 2-7 20-4-9-9-4Z"/><path d="M22 2 11 13"/></svg>
+          </button>
+        </div>
+
+      </form>
+    </div>
+
+    <!-- BLOCO 2: HISTÓRICO -->
+    <div class="chamados-section">
+      <h3 class="chamados-section__title">Meus Chamados</h3>
+
+      {chamados.length === 0 ? (
+        <div class="chamados-empty">
+          Você ainda não possui nenhum chamado de suporte.
+        </div>
+      ) : (
+        <ul class="chamados-list">
+          {chamados.map((ticket) => {
+            const st = getStatus(ticket.status);
+            return (
+              <li class="chamado-item">
+                <div class="chamado-item__info">
+                  <div class="chamado-item__meta">
+                    <span
+                      class="chamado-badge"
+                      style={`color:${st.color};background:${st.bg};border-color:${st.border};`}
+                    >{ticket.status}</span>
+                    <span class="chamado-item__date">{formatDate(ticket.created_at)}</span>
+                  </div>
+                  <h4 class="chamado-item__subject">{ticket.subject}</h4>
+                  <p class="chamado-item__message">{ticket.message}</p>
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
+    </div>
+
+  </div>
+</AppLayout>
+
+<script>
+  function initSupportPage() {
+    // ── Dropzone: nome do arquivo ─────────────────────────────────────────
+    const fileInput   = document.getElementById('attachment') as HTMLInputElement | null;
+    const fileDisplay = document.getElementById('file-name') as HTMLSpanElement | null;
+    const dropzone    = document.getElementById('dropzone-label');
+
+    fileInput?.addEventListener('change', () => {
+      const file = fileInput.files?.[0];
+      if (file && fileDisplay) {
+        fileDisplay.textContent = file.name;
+        dropzone?.classList.add('dropzone--selected');
+      }
+    });
+
+    // ── Form submit ───────────────────────────────────────────────────────
+    const form     = document.getElementById('form-suporte') as HTMLFormElement | null;
+    const btn      = document.getElementById('btn-enviar')   as HTMLButtonElement | null;
+    const btnLabel = document.getElementById('btn-label')    as HTMLSpanElement | null;
+    const feedback = document.getElementById('suporte-feedback') as HTMLSpanElement | null;
+
+    if (!form || !btn) return;
+
+    form.onsubmit = async (e) => {
+      e.preventDefault();
+
+      if (btn) btn.disabled = true;
+      if (btnLabel) btnLabel.textContent = 'Enviando...';
+
+      try {
+        const response = await fetch(window.location.pathname, {
+          method: 'POST',
+          body: new FormData(form),
+        });
+
+        const json = await response.json();
+        if (!response.ok) throw new Error(json.error || 'Falha no servidor');
+
+        if (feedback) {
+          feedback.textContent = 'Chamado aberto com sucesso! Recarregando...';
+          feedback.style.display = 'block';
+          feedback.style.color = '#4ade80';
+        }
+        if (btn) { btn.style.backgroundColor = '#4ade80'; btn.style.color = '#000'; }
+
+        setTimeout(() => window.location.reload(), 1500);
+
+      } catch (err: any) {
+        console.error('[MQ] Erro ao abrir chamado:', err?.message ?? err);
+
+        if (feedback) {
+          feedback.textContent = err?.message ?? 'Erro ao abrir chamado. Tente novamente.';
+          feedback.style.display = 'block';
+          feedback.style.color = '#f87171';
+        }
+        if (btn) { btn.disabled = false; btn.style.backgroundColor = ''; btn.style.color = ''; }
+        if (btnLabel) btnLabel.textContent = 'Abrir Chamado';
+      }
+    };
+  }
+
+  initSupportPage();
+  document.addEventListener('astro:page-load', initSupportPage);
+</script>
+
+<style>
+  .suporte-page {
+    padding: 24px 16px 48px;
+    max-width: 640px;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    gap: 24px;
+  }
+
+  /* ── Header ── */
+  .suporte-header { display: flex; align-items: center; gap: 16px; }
+  .suporte-back-btn {
+    display: flex; align-items: center; justify-content: center;
+    width: 40px; height: 40px; border-radius: 50%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.5);
+    transition: background-color 200ms, color 200ms;
+    flex-shrink: 0;
+  }
+  .suporte-back-btn:hover { background-color: rgba(255,255,255,0.1); color: #fff; }
+  .suporte-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem; font-weight: 700; color: #F5F5F5;
+  }
+
+  /* ── Card do Form ── */
+  .suporte-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    padding: 28px 24px;
+  }
+  .suporte-card__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem; font-weight: 700; color: #F5F5F5;
+    margin-bottom: 8px;
+  }
+  .suporte-card__sla {
+    display: flex; align-items: center; gap: 7px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem; color: rgba(255,255,255,0.4);
+    margin-bottom: 28px;
+  }
+  .suporte-card__sla svg { color: rgba(212,175,55,0.6); flex-shrink: 0; }
+
+  /* ── Form ── */
+  .suporte-form { display: flex; flex-direction: column; gap: 20px; }
+  .field-group  { display: flex; flex-direction: column; gap: 8px; }
+  .field-label  {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem; font-weight: 500;
+    color: rgba(255,255,255,0.45);
+  }
+  .field-label--opt { color: rgba(255,255,255,0.25); font-weight: 400; }
+
+  .select-wrapper { position: relative; }
+  .field-select {
+    width: 100%; height: 56px;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 0 48px 0 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem; color: #F5F5F5;
+    outline: none; cursor: pointer;
+    -webkit-appearance: none; appearance: none;
+    transition: border-color 200ms, background-color 200ms;
+  }
+  .field-select:focus { border-color: rgba(212,175,55,0.5); background-color: rgba(255,255,255,0.07); }
+  .field-select option { background-color: #111; color: #F5F5F5; }
+  .select-chevron {
+    position: absolute; right: 16px; top: 50%; transform: translateY(-50%);
+    color: rgba(255,255,255,0.3); pointer-events: none;
+  }
+
+  .field-textarea {
+    width: 100%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.08);
+    border-radius: 12px; padding: 16px 18px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem; color: #F5F5F5;
+    outline: none; resize: none;
+    transition: border-color 200ms, background-color 200ms;
+    -webkit-appearance: none; appearance: none;
+  }
+  .field-textarea::placeholder { color: rgba(255,255,255,0.2); }
+  .field-textarea:focus { border-color: rgba(212,175,55,0.5); background-color: rgba(255,255,255,0.07); }
+
+  .dropzone {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; height: 60px;
+    border: 1px dashed rgba(255,255,255,0.18);
+    border-radius: 12px; background-color: rgba(255,255,255,0.03);
+    font-family: 'Inter', sans-serif; font-size: 0.875rem;
+    color: rgba(255,255,255,0.4); cursor: pointer;
+    transition: background-color 200ms, border-color 200ms, color 200ms;
+  }
+  .dropzone:hover { background-color: rgba(255,255,255,0.06); border-color: rgba(255,255,255,0.3); color: rgba(255,255,255,0.6); }
+  .dropzone--selected { border-color: rgba(212,175,55,0.35); color: rgba(212,175,55,0.7); background-color: rgba(212,175,55,0.04); }
+  .dropzone__input { display: none; }
+
+  .suporte-divider { border: none; border-top: 1px solid rgba(255,255,255,0.05); margin: 4px 0; }
+  .suporte-actions { display: flex; flex-direction: column; align-items: flex-end; gap: 10px; }
+  .suporte-feedback { font-family: 'Inter', sans-serif; font-size: 0.875rem; width: 100%; }
+
+  .btn-enviar {
+    display: flex; align-items: center; justify-content: center; gap: 9px;
+    width: 100%; height: 52px; padding: 0 28px;
+    border-radius: 12px; border: none;
+    background-color: #D4AF37; color: #000;
+    font-family: 'Inter', sans-serif; font-size: 0.9375rem; font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 0 20px rgba(212,175,55,0.15);
+    transition: background-color 200ms, box-shadow 200ms, opacity 200ms;
+  }
+  @media (min-width: 480px) { .btn-enviar { width: auto; } }
+  .btn-enviar:hover { background-color: #B5952F; box-shadow: 0 0 28px rgba(212,175,55,0.3); }
+  .btn-enviar:disabled { opacity: 0.7; cursor: not-allowed; }
+
+  /* ── Histórico ── */
+  .chamados-section { display: flex; flex-direction: column; gap: 14px; }
+  .chamados-section__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem; font-weight: 700; color: #F5F5F5;
+  }
+  .chamados-empty {
+    background-color: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 14px; padding: 24px;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem; color: rgba(255,255,255,0.3);
+  }
+  .chamados-list { list-style: none; display: flex; flex-direction: column; gap: 10px; }
+  .chamado-item {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 14px; padding: 18px 20px;
+    transition: border-color 200ms;
+  }
+  .chamado-item:hover { border-color: rgba(255,255,255,0.12); }
+  .chamado-item__info { display: flex; flex-direction: column; gap: 6px; }
+  .chamado-item__meta { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; }
+  .chamado-badge {
+    display: inline-block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.625rem; font-weight: 700;
+    letter-spacing: 0.1em; text-transform: uppercase;
+    padding: 3px 10px; border-radius: 99px; border: 1px solid;
+  }
+  .chamado-item__date {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem; color: rgba(255,255,255,0.25);
+  }
+  .chamado-item__subject {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem; font-weight: 600;
+    color: rgba(255,255,255,0.85);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .chamado-item__message {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem; color: rgba(255,255,255,0.35);
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+</style>

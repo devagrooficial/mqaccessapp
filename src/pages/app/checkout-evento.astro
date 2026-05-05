@@ -1,471 +1,580 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
+
+// ── SSR: Sessão autenticada ──────────────────────────────────────────────────
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/login');
+}
+
+// ── Parâmetros: GET usa searchParams, POST usa FormData ────────────────────
+// searchParams captura valores da URL — pode carregar 'vip' de sessões antigas.
+// FormData é a fonte confiável no POST (campos hidden do formulário).
+let eventoId = Astro.url.searchParams.get('evento') ?? '';
+let tierId   = Astro.url.searchParams.get('tier')   ?? '';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  eventoId = (formData.get('evento_id') as string) || eventoId;
+  tierId   = (formData.get('tier_id')   as string) || tierId;
+}
+
+
+// ── Busca dados para o resumo do pedido ───────────────────────────────────────────
+const [{ data: evento }, { data: tier }] = await Promise.all([
+  eventoId
+    ? supabase.from('events').select('id, title, date, venue_name').eq('id', eventoId).single()
+    : { data: null },
+  tierId
+    ? supabase.from('event_ticket_tiers').select('id, name, price_brl').eq('id', tierId).single()
+    : { data: null },
+]);
+
+// ── Processamento do POST ────────────────────────────────────────────────────
+let formError: string | null = null;
+
+// Regex UUID v4
+const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+if (Astro.request.method === 'POST') {
+
+  console.log('🎫 [CHECKOUT-EVENTO] eventoId  :', eventoId || '⚠️ VAZIO');
+  console.log('🎫 [CHECKOUT-EVENTO] tierId    :', tierId   || '⚠️ VAZIO');
+
+  if (!eventoId || !UUID_REGEX.test(eventoId)) {
+    formError = 'Evento não identificado. Volte e tente novamente.';
+
+  } else if (!tierId || !UUID_REGEX.test(tierId)) {
+    console.error('❌ [CHECKOUT-EVENTO] ABORTADO — tierId inválido:', tierId);
+    formError = 'Ingresso não identificado. Volte, selecione o tipo e tente novamente.';
+
+  } else {
+
+    // ── Passo A: Insere em purchases e captura o ID gerado ──────────────────
+    const { data: purchaseData, error: purchaseError } = await supabase
+      .from('purchases')
+      .insert({
+        user_id:        user.id,
+        ticket_tier_id: tierId,
+        product_id:     null,
+        amount_brl:     0,
+        payment_method: 'pix',
+        payment_status: 'approved',
+      })
+      .select('id')
+      .single();
+
+    if (purchaseError) {
+      console.error('[CHECKOUT-EVENTO] Erro ao criar purchase:', purchaseError);
+      // Duplicata (unique constraint) — ingresso já existe, redireciona
+      if (purchaseError.code === '23505') {
+        return Astro.redirect(`/app/sucesso-evento?evento=${eventoId}&tier=${tierId}`);
+      }
+      formError = 'Não foi possível reservar seu lugar agora. Tente novamente.';
+
+    } else {
+      // ── Passo B: Gera código único do ingresso ────────────────────────────
+      const ticketCode = 'MQ-' + Math.random().toString(36).substring(2, 11).toUpperCase();
+      const qrPayload  = `https://mqaccess.com.br/validar?code=${ticketCode}`;
+
+      console.log('🎟  [CHECKOUT-EVENTO] purchase.id :', purchaseData.id);
+      console.log('🎟  [CHECKOUT-EVENTO] ticketCode  :', ticketCode);
+
+      // ── Passo C: Insere o ingresso na tabela tickets ──────────────────────
+      const { error: ticketError } = await supabase
+        .from('tickets')
+        .insert({
+          purchase_id:  purchaseData.id,
+          user_id:      user.id,
+          event_id:     eventoId,
+          tier_id:      tierId,
+          ticket_code:  ticketCode,
+          qr_payload:   qrPayload,
+        });
+
+      if (ticketError) {
+        console.error('[CHECKOUT-EVENTO] Erro ao gerar ticket:', ticketError);
+        // Purchase já criado — redireciona mesmo assim (idempotente)
+        return Astro.redirect(`/app/sucesso-evento?evento=${eventoId}&tier=${tierId}`);
+      }
+
+      console.log('✅ [CHECKOUT-EVENTO] Ingresso gerado com sucesso:', ticketCode);
+      return Astro.redirect(`/app/sucesso-evento?evento=${eventoId}&tier=${tierId}&code=${ticketCode}`);
+    }
+  }
+}
+
+
+
+
+// Helper data
+
+const dateObj    = evento?.date ? new Date(evento.date) : null;
+const isValidD   = dateObj instanceof Date && !isNaN(dateObj.getTime());
+const dataEvento = isValidD
+  ? dateObj!.toLocaleDateString('pt-BR', { day: 'numeric', month: 'long', year: 'numeric' })
+  : 'Data a confirmar';
 ---
 
-<BaseLayout title="Finalizar Reserva · Summit MQ">
-<div class="ck-shell" x-data="{
-  upsell: false,
-  base: 1997,
-  get total() { return this.base + (this.upsell ? 97 : 0); },
-  fmt(n) { return n.toLocaleString('pt-BR', { minimumFractionDigits: 0 }); }
-}">
+<BaseLayout title="Garantir Ingresso · MQ Access">
+<div class="ck-shell">
 
-  <!-- ─── TOP BAR ─── -->
-  <header class="ck-topbar">
-    <a href="/app/detalhes-evento" class="ck-back">
-      <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
-      Voltar ao evento
-    </a>
-    <div class="ck-logo">
+  <!-- ── Header ── -->
+  <header class="ck-header">
+    <a href="/app/home" class="ck-logo" aria-label="MQ ACCESS">
       <img src="/images/logohorizontal.png" alt="MQ Access" class="h-5 w-auto object-contain" />
-    </div>
-    <div class="ck-secure">
-      <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-      Ambiente seguro
+    </a>
+    <div class="ck-secure-badge">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+      <span>Ingresso Gratuito</span>
     </div>
   </header>
 
-  <!-- ─── GRID ─── -->
-  <div class="ck-grid">
+  <!-- ── Grid 60/40 ── -->
+  <main class="ck-grid">
 
-    <!-- ── LEFT: Dados + Pagamento ── -->
-    <div class="ck-left">
-      <h1 class="ck-title">Finalizar<br>Reserva</h1>
+    <!-- ═══ COLUNA ESQUERDA — Confirmação de Acesso ═══ -->
+    <div class="ck-payment-col">
+      <h1 class="ck-title">Garantir<br/>Ingresso<br/>Gratuito</h1>
+      <p class="ck-subtitle">Reserva 100% gratuita. Seu lugar está garantido sem nenhuma cobrança.</p>
 
-      <!-- Titular -->
-      <section class="ck-section">
-        <p class="ck-section-label">DADOS DO TITULAR</p>
-        <div class="ck-field-group">
-          <div class="ck-field">
-            <label class="ck-label">Nome Completo</label>
-            <input class="ck-input" type="text" placeholder="Como aparecerá no ingresso" autocomplete="name" />
-          </div>
-          <div class="ck-field-row">
-            <div class="ck-field">
-              <label class="ck-label">E-mail</label>
-              <input class="ck-input" type="email" placeholder="seu@email.com" autocomplete="email" />
-            </div>
-            <div class="ck-field">
-              <label class="ck-label">Telefone</label>
-              <input class="ck-input" type="tel" placeholder="(11) 99999-9999" autocomplete="tel" />
-            </div>
-          </div>
-          <div class="ck-field">
-            <label class="ck-label">
-              CPF
-              <span class="ck-label-hint">###.###.###-##</span>
-            </label>
-            <input class="ck-input" type="text" placeholder="000.000.000-00" inputmode="numeric" maxlength="14" />
-          </div>
+      <!-- Card de Ingresso Subsidiado (substitui campos de cartão) -->
+      <div class="ck-subsidy-card" aria-label="Ingresso 100% subsidiado">
+        <div class="ck-subsidy-badge">INGRESSO GRATUITO</div>
+        <div class="ck-subsidy-icon">
+          <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+            <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            <polyline points="9 12 11 14 15 10"/>
+          </svg>
         </div>
-      </section>
-
-      <!-- Divisor -->
-      <div class="ck-sep"></div>
-
-      <!-- Pagamento -->
-      <section class="ck-section">
-        <p class="ck-section-label">PAGAMENTO</p>
-        <div class="ck-field-group">
-          <div class="ck-field">
-            <label class="ck-label">Nome no Cartão</label>
-            <input class="ck-input" type="text" placeholder="Como impresso no cartão" autocomplete="cc-name" />
-          </div>
-          <div class="ck-field">
-            <label class="ck-label">Número do Cartão</label>
-            <div class="ck-input-icon-wrap">
-              <input class="ck-input ck-input--icon" type="text" placeholder="0000 0000 0000 0000" inputmode="numeric" maxlength="19" autocomplete="cc-number" />
-              <div class="ck-card-flags">
-                <div class="ck-flag ck-flag--visa">VISA</div>
-                <div class="ck-flag ck-flag--mc">MC</div>
-              </div>
-            </div>
-          </div>
-          <div class="ck-field-row">
-            <div class="ck-field">
-              <label class="ck-label">Validade</label>
-              <input class="ck-input" type="text" placeholder="MM / AA" maxlength="7" autocomplete="cc-exp" />
-            </div>
-            <div class="ck-field">
-              <label class="ck-label">CVV</label>
-              <input class="ck-input" type="text" placeholder="•••" maxlength="4" autocomplete="cc-csc" />
-            </div>
-          </div>
-          <!-- Parcelas -->
-          <div class="ck-field">
-            <label class="ck-label">Parcelamento</label>
-            <select class="ck-input ck-select">
-              <option>À vista — R$ 1.997</option>
-              <option>2× de R$ 998,50 sem juros</option>
-              <option>3× de R$ 665,66 sem juros</option>
-              <option>6× de R$ 332,83 sem juros</option>
-              <option>12× de R$ 166,42 com juros</option>
-            </select>
-          </div>
+        <p class="ck-subsidy-title">Reserva de Cadeira Confirmada</p>
+        <p class="ck-subsidy-desc">Seu ingresso será emitido digitalmente após a confirmação abaixo.</p>
+        <div class="ck-subsidy-divider"></div>
+        <div class="ck-subsidy-method">
+          <span class="ck-method-label">Método de liberação</span>
+          <span class="ck-method-value">Emissão Direta · Subsídio Institucional</span>
         </div>
-      </section>
-
-      <!-- Selo -->
-      <div class="ck-trust-bar">
-        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
-        Reserva processada em ambiente criptografado · PCI-DSS Compliant
       </div>
+
+      <!-- Mensagem de erro (se houver) -->
+      {formError && (
+        <div class="ck-error-alert" role="alert">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/>
+          </svg>
+          <span>{formError}</span>
+        </div>
+      )}
+
+      <!-- Formulário de Confirmação -->
+      <form class="ck-form" method="POST" id="ck-access-form">
+        <input type="hidden" name="evento_id" value={eventoId} />
+        <input type="hidden" name="tier_id"   value={tierId} />
+
+        <!-- Selo de confiança -->
+        <div class="ck-trust">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+          <span>Liberação Instantânea · Ambiente Seguro e Criptografado</span>
+        </div>
+
+        <!-- CTA mobile -->
+        <button type="submit" class="ck-cta ck-cta--mobile" id="ck-submit-mobile">
+          <span class="ck-cta-inner">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+            GARANTIR INGRESSO GRATUITO
+          </span>
+        </button>
+      </form>
     </div>
 
-    <!-- ── RIGHT: Resumo + Upsell ── -->
-    <div class="ck-right">
-      <div class="ck-summary" id="ck-summary">
+    <!-- ═══ COLUNA DIREITA — Resumo do Pedido ═══ -->
+    <div class="ck-summary-col">
 
-        <!-- Ingresso -->
-        <div class="ck-ticket-preview">
-          <div class="ck-ticket-icon">
-            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M15 5v2m0 4v2m0 4v2M5 5a2 2 0 00-2 2v3a2 2 0 110 4v3a2 2 0 002 2h14a2 2 0 002-2v-3a2 2 0 110-4V7a2 2 0 00-2-2H5z"/></svg>
-          </div>
-          <div class="ck-ticket-info">
-            <p class="ck-ticket-name">Acesso VIP — Summit MQ São Paulo</p>
-            <p class="ck-ticket-sub">15 AGO 2026 · Grand Hyatt · São Paulo</p>
-          </div>
-        </div>
+      <!-- Resumo do pedido -->
+      <div class="ck-summary-card">
+        <p class="ck-summary-label">RESUMO DO INGRESSO</p>
 
-        <!-- Linha do item -->
-        <div class="ck-line-item">
-          <span>Acesso VIP</span>
-          <span>R$ 1.997</span>
-        </div>
-
-        <!-- Upsell -->
-        <div class="ck-sep ck-sep--sm"></div>
-
-        <div class="ck-upsell">
-          <div class="ck-upsell-header">
-            <p class="ck-upsell-eyebrow">UPGRADE DE CREDENCIAMENTO</p>
-            <!-- Toggle -->
-            <button
-              class="ck-toggle"
-              :class="upsell && 'ck-toggle--on'"
-              @click="upsell = !upsell"
-              aria-label="Adicionar livro autografado"
-            >
-              <span class="ck-toggle-thumb"></span>
-            </button>
+        <div class="ck-order-item">
+          <div class="ck-order-thumb" aria-hidden="true">
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M15 10l4.553-2.069A1 1 0 0121 8.87v6.26a1 1 0 01-1.447.894L15 14M3 8a2 2 0 012-2h10a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V8z"/>
+            </svg>
           </div>
-          <p class="ck-upsell-text">
-            Adicione <strong>"A Engenharia do Networking"</strong> para ser entregue <em>autografado pessoalmente por Mario Quirino</em> no dia do evento.
-          </p>
-          <div class="ck-upsell-price" :class="upsell && 'ck-upsell-price--active'">
-            <span>+R$ 97</span>
-            <span class="ck-upsell-price-label">no livro autografado</span>
+          <div class="ck-order-info">
+            <p class="ck-order-name">
+              {evento?.title ?? 'Summit MQ'}
+            </p>
+            <p class="ck-order-type">{tier?.name ?? 'Acesso Geral'} · {dataEvento}</p>
           </div>
-          <p class="ck-upsell-aviso" x-show="!upsell">Apenas <strong>42 exemplares</strong> disponíveis para este evento.</p>
-          <div class="ck-upsell-added" x-show="upsell" x-transition>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3"><polyline points="20 6 9 17 4 12"/></svg>
-            Adicionado à sua reserva
+          <!-- Preço original riscado + valor final -->
+          <div class="ck-price-stack">
+            {tier?.price_brl && tier.price_brl > 0 && (
+              <del class="ck-price-original">
+                R$ {(tier.price_brl / 100).toLocaleString('pt-BR', { minimumFractionDigits: 0 })}
+              </del>
+            )}
+            <span class="ck-price-final">R$ 0,00</span>
           </div>
         </div>
-
-        <!-- Total -->
-        <div class="ck-sep ck-sep--sm"></div>
-
-        <div class="ck-total-block">
-          <div class="ck-total-row ck-total-row--sub" x-show="upsell" x-transition>
-            <span>Livro autografado</span><span>R$ 97</span>
-          </div>
-          <div class="ck-total-row ck-total-row--main">
-            <span>Total</span>
-            <span class="ck-total-value" x-text="'R$ ' + fmt(total)"></span>
-          </div>
-        </div>
-
-        <!-- CTA -->
-        <a href="/app/ingresso" class="ck-cta">
-          CONFIRMAR MINHA VAGA
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M5 12h14M12 5l7 7-7 7"/></svg>
-        </a>
-
-        <p class="ck-cta-micro">Ingresso gerado imediatamente após confirmação.</p>
-
-        <!-- Trust final -->
-        <div class="ck-trust-mini">
-          <span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="11" width="18" height="11" rx="2"/><path d="M7 11V7a5 5 0 0110 0v4"/></svg>
-            Segurança SSL
-          </span>
-          <span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
-            30 dias garantia
-          </span>
-          <span>
-            <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="20 6 9 17 4 12"/></svg>
-            Sem taxas ocultas
-          </span>
-        </div>
-
       </div>
-    </div>
 
-  </div>
+      <!-- Tag de desconto -->
+      <div class="ck-discount-banner">
+        <div class="ck-discount-left">
+          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="20 6 9 17 4 12"/>
+          </svg>
+          <span>Bolsa Integral Aplicada</span>
+        </div>
+        <span class="ck-discount-tag">100% OFF</span>
+      </div>
+
+      <!-- Total -->
+      <div class="ck-total-block">
+        <div class="ck-total-row">
+          <span class="ck-total-label">Total</span>
+          <span class="ck-total-value ck-total-value--free">R$ 0,00</span>
+        </div>
+        <p class="ck-total-note">Nenhum valor será cobrado</p>
+      </div>
+
+      <!-- CTA Desktop (submit do mesmo form) -->
+      <button
+        type="submit"
+        form="ck-access-form"
+        class="ck-cta ck-cta--desktop"
+        id="ck-submit-desktop"
+      >
+        <span class="ck-cta-inner">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/><polyline points="9 12 11 14 15 10"/></svg>
+          GARANTIR ACESSO GRATUITO
+        </span>
+      </button>
+
+      <p class="ck-bottom-trust">
+        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/></svg>
+        Liberação imediata · Acesso vitalício garantido
+      </p>
+
+    </div>
+  </main>
 </div>
 </BaseLayout>
 
-<script src="https://unpkg.com/alpinejs@3.x.x/dist/cdn.min.js" defer></script>
-
-<script>
-  import { gsap } from 'gsap';
-  document.addEventListener('astro:page-load', () => {
-    gsap.from('.ck-left > *', {
-      y: 20, opacity: 0, duration: 0.45,
-      stagger: 0.1, ease: 'power2.out', delay: 0.05
+<script is:inline>
+  // Feedback visual de loading no submit
+  (function () {
+    var form = document.getElementById('ck-access-form');
+    if (!form) return;
+    form.addEventListener('submit', function () {
+      var btns = document.querySelectorAll('.ck-cta');
+      btns.forEach(function (btn) {
+        btn.disabled = true;
+        var inner = btn.querySelector('.ck-cta-inner');
+        if (inner) inner.innerHTML = '<svg class="ck-spinner" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4"/></svg> Liberando acesso...';
+      });
     });
-    gsap.from('#ck-summary', {
-      y: 20, opacity: 0, duration: 0.5, ease: 'power2.out', delay: 0.25
-    });
-  });
+  })();
 </script>
 
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+  :root { --gold: #C9A96E; --gold-light: #E8D5A3; }
 
-  body { background: #000; font-family: 'Inter', sans-serif; color: #E0E0E0; }
+  .ck-shell {
+    min-height: 100dvh;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    font-family: 'Inter', sans-serif;
+  }
 
-  /* ─── TOP BAR ─── */
-  .ck-topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    padding: 14px 24px;
-    border-bottom: 1px solid rgba(255,255,255,0.04);
-    position: sticky; top: 0; z-index: 20;
-    background: rgba(0,0,0,0.85); backdrop-filter: blur(12px);
+  /* ── Header ── */
+  .ck-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
   }
-  .ck-back {
-    display: flex; align-items: center; gap: 8px;
-    font-size: .75rem; color: #3A3A3A; text-decoration: none;
-    transition: color 200ms;
-  }
-  .ck-back:hover { color: #E0E0E0; }
   .ck-logo {
-    font-size: .75rem; font-weight: 700; letter-spacing: .14em; color: #F5F5F5;
+    display: flex;
+    align-items: baseline;
+    gap: 2px;
+    text-decoration: none;
+    line-height: 1;
   }
-  .ck-logo span { font-family: 'Playfair Display', serif; color: #C9A96E; }
-  .ck-secure {
-    display: flex; align-items: center; gap: 6px;
-    font-size: .65rem; color: #2E2E2E;
+
+  .ck-secure-badge {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-size: 0.6875rem;
+    color: var(--gold);
+    opacity: 0.8;
   }
-  .ck-secure svg { color: #C9A96E; }
 
-  /* ─── SHELL ─── */
-  .ck-shell { min-height: 100dvh; }
-
-  /* ─── GRID ─── */
+  /* ── Grid ── */
   .ck-grid {
+    flex: 1;
     display: grid;
     grid-template-columns: 1fr;
-    max-width: 1060px;
+    max-width: 1100px;
+    width: 100%;
     margin: 0 auto;
-    padding: 40px 20px 80px;
+    padding: 32px 16px 64px;
     gap: 40px;
   }
-  @media (min-width: 800px) {
+  @media (min-width: 860px) {
     .ck-grid {
       grid-template-columns: 3fr 2fr;
-      gap: 56px;
+      gap: 64px;
       padding: 48px 32px 80px;
       align-items: start;
     }
   }
 
-  /* ─── LEFT ─── */
+  /* ══ COLUNA ESQUERDA ══ */
   .ck-title {
     font-family: 'Playfair Display', serif;
-    font-size: clamp(1.8rem, 3vw, 2.5rem);
-    font-weight: 700; line-height: 1.1;
-    color: #F5F5F5; margin-bottom: 36px;
+    font-size: clamp(1.75rem, 4vw, 2.5rem);
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 8px;
+    line-height: 1.1;
+  }
+  .ck-subtitle { font-size:.8125rem; color:#4A4A4A; margin-bottom:32px; }
+
+  /* ── Card de Subsídio ── */
+  .ck-subsidy-card {
+    position: relative;
+    background: linear-gradient(140deg, #0d0d0a 0%, #0f0d08 60%, #111008 100%);
+    border: 1px solid rgba(201,169,110,0.22);
+    border-radius: 16px;
+    padding: 28px 24px 24px;
+    margin-bottom: 24px;
+    overflow: hidden;
+  }
+  .ck-subsidy-card::before {
+    content: '';
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 0%, rgba(201,169,110,0.08), transparent 65%);
+    pointer-events: none;
+  }
+  .ck-subsidy-card::after {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201,169,110,0.5), transparent);
   }
 
-  .ck-section { margin-bottom: 0; }
-  .ck-section-label {
-    font-size: .55rem; font-weight: 700; letter-spacing: .18em;
-    color: #2A2A2A; margin-bottom: 18px;
-  }
-
-  .ck-field-group { display: flex; flex-direction: column; gap: 18px; }
-  .ck-field-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
-  }
-  .ck-field { display: flex; flex-direction: column; gap: 8px; }
-
-  .ck-label {
-    font-size: .7rem; font-weight: 500; color: #3A3A3A;
-    letter-spacing: .04em;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .ck-label-hint {
-    font-family: monospace; font-size: .65rem;
-    color: #2A2A2A; letter-spacing: .02em;
-  }
-
-  .ck-input {
-    background: transparent;
-    border: none; border-bottom: 1px solid rgba(255,255,255,0.1);
-    color: #E0E0E0; font-family: 'Inter', sans-serif; font-size: .875rem;
-    padding: 10px 0; outline: none; width: 100%;
-    transition: border-color 200ms;
-  }
-  .ck-input::placeholder { color: #2A2A2A; }
-  .ck-input:focus { border-color: #C9A96E; }
-
-  .ck-select {
-    appearance: none; cursor: pointer;
-    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%233A3A3A'/%3E%3C/svg%3E");
-    background-repeat: no-repeat; background-position: right 4px center;
-    padding-right: 20px;
-  }
-  .ck-select option { background: #0A0A0A; }
-
-  .ck-input-icon-wrap { position: relative; }
-  .ck-input--icon { padding-right: 72px; }
-  .ck-card-flags {
-    position: absolute; right: 0; bottom: 10px;
-    display: flex; gap: 4px;
-  }
-  .ck-flag {
-    font-size: .45rem; font-weight: 800; letter-spacing: .06em;
-    padding: 2px 5px; border-radius: 3px;
-  }
-  .ck-flag--visa { background: #1a1f71; color: #fff; }
-  .ck-flag--mc   { background: #EB001B; color: #fff; }
-
-  .ck-sep {
-    height: 1px; background: rgba(255,255,255,0.05);
-    margin: 28px 0;
-  }
-  .ck-sep--sm { margin: 16px 0; }
-
-  .ck-trust-bar {
-    display: flex; align-items: center; gap: 8px;
-    font-size: .7rem; color: #2A2A2A;
-    margin-top: 28px;
-  }
-  .ck-trust-bar svg { color: #C9A96E; flex-shrink: 0; }
-
-  /* ─── RIGHT ─── */
-  @media (min-width: 800px) {
-    .ck-summary { position: sticky; top: 72px; }
-  }
-
-  .ck-summary {
-    background: #0A0A0A;
-    border: 1px solid rgba(255,255,255,0.05);
-    border-radius: 16px; padding: 24px;
-  }
-
-  /* Ticket preview */
-  .ck-ticket-preview {
-    display: flex; gap: 14px; align-items: flex-start;
-    margin-bottom: 18px;
-  }
-  .ck-ticket-icon {
-    width: 40px; height: 40px; flex-shrink: 0; border-radius: 10px;
+  .ck-subsidy-badge {
+    display: inline-flex;
+    align-items: center;
+    font-size: .5625rem;
+    font-weight: 800;
+    letter-spacing: .18em;
+    color: var(--gold);
     background: rgba(201,169,110,0.08);
     border: 1px solid rgba(201,169,110,0.2);
+    border-radius: 4px;
+    padding: 4px 10px;
+    margin-bottom: 20px;
+  }
+
+  .ck-subsidy-icon {
+    width: 52px; height: 52px;
+    border-radius: 50%;
+    background: rgba(201,169,110,0.06);
+    border: 1px solid rgba(201,169,110,0.18);
     display: flex; align-items: center; justify-content: center;
-    color: #C9A96E;
+    color: var(--gold);
+    margin-bottom: 16px;
   }
-  .ck-ticket-name { font-size: .875rem; font-weight: 600; color: #E0E0E0; margin-bottom: 4px; }
-  .ck-ticket-sub  { font-size: .7rem; color: #3A3A3A; }
 
-  /* Line items */
-  .ck-line-item {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: .8125rem; color: #5A5A5A;
+  .ck-subsidy-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.125rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 8px;
   }
-  .ck-line-item span:last-child { color: #A0A0A0; font-weight: 500; }
+  .ck-subsidy-desc {
+    font-size: .8125rem;
+    color: #5A5A5A;
+    line-height: 1.65;
+    margin-bottom: 20px;
+  }
+  .ck-subsidy-divider {
+    height: 1px;
+    background: rgba(255,255,255,0.04);
+    margin-bottom: 16px;
+  }
+  .ck-subsidy-method {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: 4px;
+  }
+  .ck-method-label { font-size: .625rem; letter-spacing: .1em; color: #3A3A3A; text-transform: uppercase; }
+  .ck-method-value { font-size: .75rem; color: var(--gold); font-weight: 500; }
 
-  /* Upsell */
-  .ck-upsell {
+  /* ── Erro ── */
+  .ck-error-alert {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    background: rgba(220, 38, 38, 0.08);
+    border: 1px solid rgba(220, 38, 38, 0.25);
+    border-radius: 8px;
+    padding: 12px 16px;
+    font-size: .8125rem;
+    color: #FCA5A5;
+    margin-bottom: 20px;
+  }
+
+  /* ── Form ── */
+  .ck-form { display: flex; flex-direction: column; gap: 0; }
+
+  /* Selo de confiança */
+  .ck-trust {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .6875rem;
+    color: #2E2E2E;
+    margin-bottom: 24px;
+  }
+
+  /* ══ COLUNA DIREITA ══ */
+  .ck-summary-card {
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 20px;
+    margin-bottom: 12px;
+  }
+  .ck-summary-label {
+    font-size:.625rem; font-weight:600; letter-spacing:.14em;
+    color:#3A3A3A; margin-bottom:16px;
+  }
+
+  .ck-order-item {
+    display: flex;
+    align-items: flex-start;
+    gap: 12px;
+    padding: 12px 0;
+  }
+
+  .ck-order-thumb {
+    width: 40px; height: 40px;
+    border-radius: 8px;
     background: #111;
-    border: 1px dashed rgba(201,169,110,0.25);
-    border-radius: 12px; padding: 16px;
-  }
-  .ck-upsell-header {
-    display: flex; align-items: center; justify-content: space-between;
-    margin-bottom: 10px;
-  }
-  .ck-upsell-eyebrow {
-    font-size: .525rem; font-weight: 700; letter-spacing: .16em; color: #C9A96E;
+    border: 1px solid rgba(255,255,255,0.06);
+    display: flex; align-items: center; justify-content: center;
+    color: var(--gold); flex-shrink: 0;
   }
 
-  /* Toggle switch */
-  .ck-toggle {
-    width: 40px; height: 22px; border-radius: 11px;
-    background: rgba(255,255,255,0.07); border: 1px solid rgba(255,255,255,0.1);
-    position: relative; cursor: pointer; flex-shrink: 0;
-    transition: background 250ms, border-color 250ms;
-  }
-  .ck-toggle--on { background: rgba(201,169,110,0.25); border-color: rgba(201,169,110,0.5); }
-  .ck-toggle-thumb {
-    position: absolute; top: 3px; left: 3px;
-    width: 14px; height: 14px; border-radius: 50%;
-    background: #3A3A3A;
-    transition: transform 250ms, background 250ms;
-  }
-  .ck-toggle--on .ck-toggle-thumb { transform: translateX(18px); background: #C9A96E; }
+  .ck-order-info { flex: 1; }
+  .ck-order-name { font-size:.8125rem; font-weight:500; color:#E0E0E0; margin-bottom:3px; line-height:1.3; }
+  .ck-order-type { font-size:.6875rem; color:#3A3A3A; }
 
-  .ck-upsell-text {
-    font-size: .8rem; color: #4A4A4A; line-height: 1.6; margin-bottom: 10px;
+  .ck-price-stack {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    flex-shrink: 0;
+    gap: 2px;
   }
-  .ck-upsell-text strong { color: #A0A0A0; font-weight: 600; }
-  .ck-upsell-text em { font-style: italic; color: #C9A96E; font-style: normal; }
+  .ck-price-original {
+    font-size: .75rem;
+    color: #3A3A3A;
+    text-decoration: line-through;
+    font-family: 'Playfair Display', serif;
+    white-space: nowrap;
+  }
+  .ck-price-final {
+    font-family: 'Playfair Display', serif;
+    font-size: .9375rem;
+    font-weight: 700;
+    color: var(--gold);
+    white-space: nowrap;
+  }
 
-  .ck-upsell-price {
-    font-size: 1.1rem; font-weight: 700; color: #3A3A3A;
-    display: flex; align-items: baseline; gap: 8px;
-    transition: color 250ms;
+  /* ── Banner de desconto ── */
+  .ck-discount-banner {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    background: rgba(201,169,110,0.05);
+    border: 1px solid rgba(201,169,110,0.15);
+    border-radius: 10px;
+    padding: 10px 14px;
+    margin-bottom: 12px;
   }
-  .ck-upsell-price--active { color: #C9A96E; }
-  .ck-upsell-price-label { font-size: .7rem; font-weight: 400; color: #3A3A3A; }
-
-  .ck-upsell-aviso { font-size: .7rem; color: #2A2A2A; margin-top: 8px; }
-  .ck-upsell-aviso strong { color: #C9A96E; }
-  .ck-upsell-added {
-    display: flex; align-items: center; gap: 6px;
-    font-size: .7rem; color: #4CAF80; margin-top: 8px;
-    font-weight: 600; letter-spacing: .04em;
+  .ck-discount-left {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: .75rem;
+    color: #5A5A5A;
   }
-  .ck-upsell-added svg { stroke: #4CAF80; }
+  .ck-discount-left svg { color: #4ade80; flex-shrink: 0; }
+  .ck-discount-tag {
+    font-size: .625rem;
+    font-weight: 800;
+    letter-spacing: .1em;
+    color: #000;
+    background: var(--gold);
+    border-radius: 4px;
+    padding: 3px 8px;
+  }
 
   /* Total */
-  .ck-total-block { display: flex; flex-direction: column; gap: 8px; }
-  .ck-total-row {
-    display: flex; justify-content: space-between; align-items: center;
+  .ck-total-block {
+    padding: 16px 0;
+    border-top: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 20px;
   }
-  .ck-total-row--sub { font-size: .8rem; color: #3A3A3A; }
-  .ck-total-row--main { font-size: 1rem; font-weight: 600; color: #F5F5F5; }
-  .ck-total-value { font-size: 1.375rem; font-weight: 700; color: #F5F5F5; }
+  .ck-total-row { display:flex; align-items:baseline; justify-content:space-between; margin-bottom:4px; }
+  .ck-total-label { font-size:.75rem; color:#4A4A4A; }
+  .ck-total-value { font-family:'Playfair Display',serif; font-size:1.875rem; font-weight:700; color:#F5F5F5; }
+  .ck-total-value--free { color: var(--gold); }
+  .ck-total-note { font-size:.6875rem; color:#2E2E2E; text-align:right; }
 
   /* CTA */
   .ck-cta {
-    display: flex; align-items: center; justify-content: center; gap: 10px;
-    width: 100%; height: 52px; margin-top: 20px;
-    background: #C9A96E; color: #000;
-    font-family: 'Inter', sans-serif; font-size: .75rem; font-weight: 800;
-    letter-spacing: .14em; text-decoration: none; border-radius: 10px;
-    transition: background 200ms, transform 150ms;
+    display:flex; align-items:center; justify-content:center; gap:10px;
+    width:100%; height:54px;
+    background: linear-gradient(135deg, #C9A96E, #A8854A);
+    color:#000;
+    font-family:'Inter',sans-serif; font-size:.8125rem; font-weight:800; letter-spacing:.12em;
+    border:none; border-radius:8px; cursor:pointer;
+    transition: opacity 200ms, transform 150ms, box-shadow 250ms;
+    margin-bottom:12px;
+    box-shadow: 0 4px 20px rgba(201,169,110,0.2);
   }
-  .ck-cta:hover { background: #E8D5A3; transform: translateY(-1px); }
+  .ck-cta:hover { opacity:.92; transform: translateY(-1px); box-shadow: 0 8px 28px rgba(201,169,110,0.3); }
   .ck-cta:active { transform: translateY(0); }
+  .ck-cta:disabled { opacity:.65; cursor:not-allowed; transform:none; }
+  .ck-cta--mobile { display:flex; }
+  .ck-cta--desktop { display:none; }
+  @media (min-width:860px) {
+    .ck-cta--mobile { display:none; }
+    .ck-cta--desktop { display:flex; }
+  }
+  .ck-cta-inner { display:flex; align-items:center; gap:8px; }
 
-  .ck-cta-micro {
-    text-align: center; font-size: .675rem; color: #2A2A2A;
-    margin-top: 10px; margin-bottom: 16px;
-  }
+  /* Loading spinner */
+  .ck-spinner { animation: spin 0.8s linear infinite; }
+  @keyframes spin { to { transform:rotate(360deg); } }
 
-  /* Trust mini */
-  .ck-trust-mini {
-    display: flex; justify-content: space-between;
-    border-top: 1px solid rgba(255,255,255,0.04); padding-top: 14px;
+  .ck-bottom-trust {
+    display:flex; align-items:center; justify-content:center; gap:6px;
+    font-size:.6875rem; color:#252525; text-align:center;
   }
-  .ck-trust-mini span {
-    display: flex; align-items: center; gap: 5px;
-    font-size: .65rem; color: #2A2A2A;
-  }
-  .ck-trust-mini svg { color: #C9A96E; }
 </style>

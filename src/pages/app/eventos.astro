@@ -1,0 +1,117 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+// ── Helper: Date → { day, month } ─────────────────────────────────────────
+const dateParts = (iso: string) => {
+  const d = new Date(iso);
+  return {
+    day:   d.getUTCDate().toString().padStart(2, '0'),
+    month: d.toLocaleString('pt-BR', { month: 'short', timeZone: 'UTC' })
+           .toUpperCase().replace('.', ''),
+  };
+};
+
+const locals = Astro.locals;
+
+const { data: eventos, error: eventosError } = await locals.supabase
+  .from('events')
+  .select('*')
+  .eq('is_active', true)
+  .order('date', { ascending: true });
+
+if (eventosError) console.error("🚨 Erro ao buscar eventos:", eventosError);
+---
+
+<AppLayout title="Eventos" activeNav="home">
+  <div class="home-page">
+    
+    <!-- Botão Voltar -->
+    <a href="/app/home" class="inline-flex items-center text-xs font-medium text-[#C9A96E] hover:text-[#E8D5A3] transition-colors mb-8 uppercase tracking-widest">
+      ← Voltar para Home
+    </a>
+
+    <!-- Header -->
+    <header class="mb-10">
+      <h1 class="text-3xl md:text-4xl font-bold text-[#F5F5F5] font-serif mb-2">Eventos</h1>
+      <p class="text-sm md:text-base text-neutral-400">Participe dos próximos encontros e imersões presenciais.</p>
+    </header>
+
+    <!-- List -->
+    <div class="events-list">
+      {eventos && eventos.length > 0 ? eventos.map((evento) => {
+        const { day, month } = dateParts(evento.date);
+        return (
+          <a href={`/app/detalhes-evento?id=${evento.id}`} class="card card-reveal event-card" style="text-decoration:none;overflow:hidden;">
+            <div class="event-img-col">
+              <img
+                src={evento.banner_url ?? '/summit-mq-banner.png'}
+                alt={evento.title}
+                class="event-img"
+                loading="lazy"
+              />
+            </div>
+            <div class="event-date">
+              <p class="event-day">{day}</p>
+              <p class="event-month">{month}</p>
+            </div>
+            <div class="event-info">
+              <p class="event-location">{evento.venue_name ?? '—'}</p>
+              <h3 class="event-name">{evento.title}</h3>
+            </div>
+            <span class="btn-primary event-cta">Garantir</span>
+          </a>
+        );
+      }) : (
+        <p class="text-neutral-500 italic mt-4">Nenhum evento agendado no momento. Fique atento às próximas atualizações.</p>
+      )}
+    </div>
+
+  </div>
+</AppLayout>
+
+<style>
+  .home-page {
+    padding: 24px 16px 32px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* === Events List (Home Exact Clone) === */
+  .events-list { display: flex; flex-direction: column; gap: 12px; }
+
+  .event-card { 
+    display: flex; align-items: center; gap: 16px; position: relative; overflow: hidden;
+    background: #080808; border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; padding: 20px;
+    transition: border-color 0.3s;
+  }
+  .event-card:hover { border-color: rgba(201,169,110,0.3); }
+
+  .event-img-col {
+    position: absolute; inset: 0;
+    z-index: 0;
+    pointer-events: none;
+  }
+  .event-img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+    filter: brightness(0.18) saturate(0.4);
+    transition: filter 400ms ease;
+  }
+  .event-card:hover .event-img { filter: brightness(0.25) saturate(0.5); }
+  .event-card > *:not(.event-img-col) { position: relative; z-index: 1; }
+  .event-date {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    min-width: 48px;
+  }
+  .event-day { font-size: 1.5rem; font-weight: 700; color: #C9A96E; line-height: 1; }
+  .event-month { font-size: 0.6875rem; color: #6A6A6A; font-weight: 600; letter-spacing: 0.08em; }
+  .event-info { flex: 1; }
+  .event-location { font-size: 0.75rem; color: #5A5A5A; margin-bottom: 2px; }
+  .event-name { font-family: 'Playfair Display', serif; font-size: 1rem; color: #F5F5F5; line-height: 1.3; margin-bottom: 4px; }
+  .event-price { font-size: 0.8125rem; color: #A0A0A0; }
+  .event-cta { padding: 8px 16px; font-size: 0.8125rem; white-space: nowrap; background: #C9A96E; color: #000; border-radius: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s; }
+  .event-cta:hover { background: #E8D5A3; }
+</style>

@@ -1,0 +1,392 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+import { supabase } from '@/lib/supabase';
+
+// ── Busca compras aprovadas do usuário com JOIN no produto ─────────────────
+const userId = Astro.locals.user?.id ?? '';
+
+const { data: purchases } = userId
+  ? await supabase
+      .from('purchases')
+      .select(`
+        id,
+        payment_status,
+        created_at,
+        products (
+          id,
+          type,
+          title,
+          author,
+          thumbnail_url,
+          cover_url
+        )
+      `)
+      .eq('user_id', userId)
+      .eq('payment_status', 'approved')
+  : { data: [] };
+
+// ── Filtra por categoria ───────────────────────────────────────────────────
+const digitalPurchases  = purchases?.filter(p =>
+  ['masterclass', 'ebook'].includes((p.products as any)?.type)
+) ?? [];
+
+const eventPurchases    = purchases?.filter(p =>
+  (p.products as any)?.type === 'event'
+) ?? [];
+
+// (livros físicos via tabela dedicada — veja bookOrders abaixo)
+
+// ── Ingressos diretos via tabela tickets (JOIN em events + tiers) ─────────────
+const { data: userTickets } = userId
+  ? await supabase
+      .from('tickets')
+      .select('*, events(*), event_ticket_tiers(*)')
+      .eq('user_id', userId)
+  : { data: [] };
+
+// Helper: formata data + cidade do evento
+const formatEventDate = (dateString: string | null, city?: string) => {
+  if (!dateString) return city ?? 'Local a definir';
+  const date     = new Date(dateString);
+  const day      = date.getDate();
+  const month    = date.toLocaleString('pt-BR', { month: 'long' });
+  const fmtMonth = month.charAt(0).toUpperCase() + month.slice(1);
+  return `${day} de ${fmtMonth} · ${city ?? 'Local a definir'}`;
+};
+
+// ── Pedidos de livros físicos (tabela dedicada) ────────────────────────────────
+const { data: bookOrders } = userId
+  ? await supabase
+      .from('physical_book_orders')
+      .select('*, products(*)')
+      .eq('user_id', userId)
+  : { data: [] };
+---
+
+<AppLayout title="Minhas Compras" activeNav="compras">
+  <div class="compras-page">
+
+    <header class="page-header">
+      <h1 class="page-title">Minhas Compras</h1>
+    </header>
+
+    <!-- TabBar interna -->
+    <div class="tab-bar" id="compras-tabs">
+      <button class="tab-item" data-tab-target="panel-digital"  id="tab-digital"  aria-selected="true">Digital</button>
+      <button class="tab-item" data-tab-target="panel-eventos"  id="tab-eventos"  aria-selected="false">Eventos</button>
+      <button class="tab-item" data-tab-target="panel-livros"   id="tab-livros"   aria-selected="false">Livros</button>
+    </div>
+
+    <!-- ══ Painel Digital ══════════════════════════════════════════════════ -->
+    <div class="tab-panel" data-tab-content="panel-digital" id="panel-digital">
+      <div class="purchases-list">
+
+        <!-- Assinatura (sempre fixo) -->
+        <div class="card purchase-item">
+          <div class="purchase-icon purchase-icon--subscription"></div>
+          <div class="purchase-info">
+            <p class="purchase-type">Assinatura</p>
+            <h3 class="purchase-name">MQ ACCESS — Plano Anual</h3>
+            <p class="purchase-status">
+              <span class="status-dot status-dot--active"></span>
+              Renova em 12 jan 2027
+            </p>
+          </div>
+          <span class="badge-gold">Ativa</span>
+        </div>
+
+        <!-- Compras digitais do banco -->
+        {digitalPurchases.length > 0 ? digitalPurchases.map((p) => {
+          const prod = p.products as any;
+          return (
+            <div class="card purchase-item">
+              <div class="purchase-thumb">
+                {prod.thumbnail_url
+                  ? <img src={prod.thumbnail_url} alt={prod.title} class="purchase-thumb__img" loading="lazy" />
+                  : <div class="purchase-icon purchase-icon--course"></div>
+                }
+              </div>
+              <div class="purchase-info">
+                <p class="purchase-type">{prod.type === 'ebook' ? 'E-book' : 'Curso'}</p>
+                <h3 class="purchase-name">{prod.title}</h3>
+                <p class="purchase-status">
+                  <span class="status-dot status-dot--active"></span>
+                  Acesso ativo
+                </p>
+              </div>
+              <a
+                href={`/app/player?id=${prod.id}`}
+                class="btn-secondary purchase-action"
+              >Acessar</a>
+            </div>
+          );
+        }) : (
+          <div class="empty-state">
+            <p class="empty-title">Nenhum curso adquirido</p>
+            <p class="empty-sub">Explore o catálogo e adquira sua primeira masterclass.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Catálogo</a>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- ══ Painel Eventos ══════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" data-tab-content="panel-eventos" id="panel-eventos">
+      <div class="purchases-list">
+        {userTickets && userTickets.length > 0 ? userTickets.map((ticket: any) => {
+          const ev   = ticket.events              as any;
+          const tier = ticket.event_ticket_tiers  as any;
+          return (
+            <a
+              href={`/app/ingresso?id=${ticket.id}`}
+              class="card purchase-item purchase-item--link"
+            >
+              <div class="purchase-icon purchase-icon--event"></div>
+              <div class="purchase-info">
+                <p class="purchase-type">{tier?.name?.toUpperCase() ?? 'INGRESSO'}</p>
+                <h3 class="purchase-name">{ev?.title ?? 'Evento'}</h3>
+                <p class="purchase-status">
+                  {formatEventDate(ev?.date ?? null, ev?.city ?? 'São Paulo')}
+                </p>
+              </div>
+              <span class="btn-secondary purchase-action">Ver QR</span>
+            </a>
+          );
+        }) : (
+          <div class="empty-state">
+            <p class="empty-title">Nenhum ingresso adquirido</p>
+            <p class="empty-sub">Seus ingressos para eventos aparecerão aqui após a compra.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Eventos</a>
+          </div>
+        )}
+      </div>
+    </div>
+
+    <!-- ══ Painel Livros ═══════════════════════════════════════════════════ -->
+    <div class="tab-panel hidden" data-tab-content="panel-livros" id="panel-livros">
+      <div class="books-library-grid">
+        {bookOrders && bookOrders.length > 0 ? bookOrders.map((order: any) => {
+          const prod = order.products as any;
+          return (
+            <a
+              href={`/app/rastreio-livro?id=${order.id}`}
+              class="card library-book-card library-book-card--link"
+            >
+              <div class="library-book-cover">
+                {prod?.cover_url
+                  ? <img src={prod.cover_url} alt={prod.title} class="library-book-cover__img" loading="lazy" />
+                  : <div class="library-book-cover__placeholder"></div>
+                }
+              </div>
+              <div class="library-book-info">
+                <h3 class="library-book-title">{prod?.title ?? 'Livro'}</h3>
+                <p class="library-book-format">
+                  Livro Físico
+                  {order.order_code && <span class="library-book-code"> · Pedido {order.order_code}</span>}
+                </p>
+                <span class="btn-secondary library-book-cta">Rastrear</span>
+              </div>
+            </a>
+          );
+        }) : (
+          <div class="empty-state" style="grid-column: 1 / -1;">
+            <p class="empty-title">Nenhum pedido de livro físico</p>
+            <p class="empty-sub">Seus pedidos de livros aparecerão aqui após a compra.</p>
+            <a href="/app/home" class="btn-primary" style="display:inline-flex;align-items:center;padding:10px 20px;font-size:0.875rem;">Ver Catálogo</a>
+          </div>
+        )}
+      </div>
+    </div>
+
+  </div>
+</AppLayout>
+
+<!-- is:inline garante execução no browser (não bundled) — essencial no SSR com View Transitions -->
+<script is:inline>
+  function initTabs() {
+    const tabBtns  = document.querySelectorAll('[data-tab-target]');
+    const tabPanels = document.querySelectorAll('[data-tab-content]');
+
+    if (!tabBtns.length) return;
+
+    function activateTab(targetId) {
+      // Painéis: mostra o alvo, esconde os demais
+      tabPanels.forEach(function(panel) {
+        if (panel.id === targetId) {
+          panel.classList.remove('hidden');
+        } else {
+          panel.classList.add('hidden');
+        }
+      });
+
+      // Botões: estilo ativo/inativo
+      tabBtns.forEach(function(btn) {
+        const isActive = btn.dataset.tabTarget === targetId;
+        btn.classList.toggle('active', isActive);
+        btn.setAttribute('aria-selected', String(isActive));
+      });
+    }
+
+    // Ativa a primeira aba ao inicializar
+    const firstTab = tabBtns[0];
+    activateTab(firstTab.dataset.tabTarget);
+
+    // Click em cada botão
+    tabBtns.forEach(function(btn) {
+      btn.addEventListener('click', function() {
+        activateTab(btn.dataset.tabTarget);
+      });
+    });
+  }
+
+  // Roda na carga inicial
+  initTabs();
+
+  // Re-roda após cada navegação via View Transitions (Astro ClientRouter)
+  document.addEventListener('astro:page-load', initTabs);
+</script>
+
+<style>
+  .compras-page { padding: 24px 16px 32px; max-width: 960px; margin: 0 auto; }
+
+  .page-header { margin-bottom: 24px; }
+  .page-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #F5F5F5;
+  }
+
+  /* ── TabBar ─────────────────────────────────────────────────────────────── */
+  .tab-bar {
+    display: flex;
+    gap: 4px;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+    margin-bottom: 24px;
+  }
+
+  .tab-item {
+    background: transparent;
+    border: none;
+    color: #4A4A4A;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    padding: 12px 16px;
+    cursor: pointer;
+    border-bottom: 2px solid transparent;
+    margin-bottom: -1px;
+    transition: color 200ms ease, border-color 200ms ease;
+  }
+
+  .tab-item.active {
+    color: #C9A96E;
+    border-bottom-color: #C9A96E;
+  }
+
+  .tab-item:hover:not(.active) { color: #A0A0A0; }
+
+  /* ── Painéis ─────────────────────────────────────────────────────────────── */
+  .tab-panel        { display: block; }
+  .tab-panel.hidden { display: none; }
+
+  /* ── Purchase items ──────────────────────────────────────────────────────── */
+  .purchases-list { display: flex; flex-direction: column; gap: 12px; }
+  .purchase-item  { display: flex; align-items: center; gap: 16px; }
+
+  .purchase-icon {
+    width: 48px;
+    height: 48px;
+    border-radius: 8px;
+    flex-shrink: 0;
+  }
+  .purchase-icon--course       { background: linear-gradient(135deg, #1a1a2e, #16213e); }
+  .purchase-icon--subscription { background: linear-gradient(135deg, #1a2e1a, #162116); }
+  .purchase-icon--event        { background: linear-gradient(135deg, #2e1a1a, #211616); }
+
+  /* Card de ingresso totalmente clicável */
+  .purchase-item--link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 200ms, transform 180ms;
+  }
+  .purchase-item--link:hover {
+    border-color: rgba(212,175,55,0.45);
+    transform: scale(1.01);
+  }
+
+  /* Thumbnail real do curso no lugar do ícone placeholder */
+  .purchase-thumb {
+    width: 64px;
+    height: 48px;
+    border-radius: 6px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: #111;
+  }
+  .purchase-thumb__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    filter: brightness(0.85);
+  }
+
+  .purchase-info { flex: 1; min-width: 0; }
+  .purchase-type  { font-size: 0.6875rem; color: #4A4A4A; text-transform: uppercase; letter-spacing: 0.08em; margin-bottom: 2px; }
+  .purchase-name  { font-size: 0.9375rem; font-weight: 500; color: #F5F5F5; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .purchase-status { display: flex; align-items: center; gap: 6px; font-size: 0.75rem; color: #A0A0A0; margin-top: 4px; }
+
+  .status-dot          { width: 6px; height: 6px; border-radius: 50%; flex-shrink: 0; }
+  .status-dot--active  { background-color: #4ade80; box-shadow: 0 0 6px rgba(74, 222, 128, 0.4); }
+
+  .purchase-action { padding: 8px 14px; font-size: 0.8125rem; }
+
+  /* ── Empty state ──────────────────────────────────────────────────────────── */
+  .empty-state {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 8px;
+    padding: 48px 24px;
+    text-align: center;
+    border: 1px dashed rgba(255,255,255,0.05);
+    border-radius: 12px;
+  }
+  .empty-title { font-size: 1rem; font-weight: 600; color: #F5F5F5; }
+  .empty-sub   { font-size: 0.875rem; color: #4A4A4A; margin-bottom: 12px; }
+
+  /* ── Books library ──────────────────────────────────────────────────────── */
+  .books-library-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 16px; }
+  .library-book-card  { display: flex; flex-direction: column; gap: 12px; padding: 0; overflow: hidden; }
+  .library-book-cover {
+    width: 100%;
+    aspect-ratio: 2/3;
+    max-height: 180px;
+    background: linear-gradient(160deg, #111111, #0A0A0A);
+    overflow: hidden;
+  }
+  .library-book-cover__img { width: 100%; height: 100%; object-fit: cover; }
+  .library-book-info  { padding: 0 12px 12px; display: flex; flex-direction: column; gap: 6px; }
+  .library-book-title { font-family: 'Playfair Display', serif; font-size: 0.9375rem; color: #F5F5F5; }
+  .library-book-format { font-size: 0.75rem; color: #4A4A4A; }
+  .library-book-cta   { padding: 8px 0; font-size: 0.8125rem; }
+
+  /* Card de livro clicável */
+  .library-book-card--link {
+    text-decoration: none;
+    cursor: pointer;
+    transition: border-color 200ms, transform 180ms;
+  }
+  .library-book-card--link:hover {
+    border-color: rgba(212,175,55,0.4);
+    transform: scale(1.01);
+  }
+
+  /* Placeholder de capa sem imagem */
+  .library-book-cover__placeholder {
+    width: 100%; height: 100%;
+    background: linear-gradient(160deg, #111, #080808);
+  }
+
+  /* Código do pedido */
+  .library-book-code { color: #3A3A3A; font-size: 0.7rem; }
+</style>

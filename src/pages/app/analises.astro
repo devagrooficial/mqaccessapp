@@ -1,5 +1,105 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+
+// ── Busca o último assessment do usuário + contagem de respostas ─────────────
+let egoStatus: 'done' | 'pending' = 'pending';
+let egoHref   = '/app/pergunta';
+let egoAction = 'Iniciar mapeamento →';
+let egoAssessmentId: string | null = null;
+
+if (user) {
+  const { data: lastAssessment } = await supabase
+    .from('egogram_assessments')
+    .select('id')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastAssessment?.id) {
+    egoAssessmentId = lastAssessment.id;
+
+    // Conta quantas respostas este assessment tem
+    const { count } = await supabase
+      .from('egogram_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('assessment_id', lastAssessment.id);
+
+    if ((count ?? 0) >= 50) {
+      egoStatus = 'done';
+      egoHref   = `/app/relatorio?id=${lastAssessment.id}`;
+      egoAction = 'Ver resultado →';
+    } else {
+      egoHref   = '/app/pergunta';
+      egoAction = 'Continuar mapeamento →';
+    }
+  }
+}
+
+// ── Status do Eneagrama ────────────────────────────────────────────────────────
+let enneStatus: 'done' | 'pending' = 'pending';
+let enneHref   = '/app/eneagrama/pergunta';
+let enneAction = 'Iniciar mapeamento →';
+
+if (user) {
+  const { data: lastEnne } = await supabase
+    .from('enneagram_assessments')
+    .select('id')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastEnne?.id) {
+    const { count: enneCount } = await supabase
+      .from('enneagram_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('assessment_id', lastEnne.id);
+
+    if ((enneCount ?? 0) >= 45) {
+      enneStatus = 'done';
+      enneHref   = `/app/eneagrama/relatorio?id=${lastEnne.id}`;
+      enneAction = 'Ver resultado →';
+    } else {
+      enneHref   = '/app/eneagrama/pergunta';
+      enneAction = 'Continuar mapeamento →';
+    }
+  }
+}
+
+// ── Status do DISC ───────────────────────────────────────────────────
+let discStatus: 'done' | 'pending' = 'pending';
+let discHref   = '/app/disc/pergunta';
+let discAction = 'Iniciar mapeamento →';
+
+if (user) {
+  const { data: lastDisc } = await supabase
+    .from('disc_assessments')
+    .select('id')
+    .eq('user_id', user.id)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (lastDisc?.id) {
+    const { count: discCount } = await supabase
+      .from('disc_answers')
+      .select('id', { count: 'exact', head: true })
+      .eq('assessment_id', lastDisc.id);
+
+    if ((discCount ?? 0) >= 30) {
+      discStatus = 'done';
+      discHref   = `/app/disc/relatorio?id=${lastDisc.id}`;
+      discAction = 'Ver resultado →';
+    } else {
+      discHref   = '/app/disc/pergunta';
+      discAction = 'Continuar mapeamento →';
+    }
+  }
+}
 ---
 
 <AppLayout title="Central de Análises" activeNav="analises">
@@ -16,11 +116,14 @@ import AppLayout from '@/layouts/AppLayout.astro';
 
     <!-- Grid -->
     <div class="analises-grid">
-      <!-- Egograma -->
-      <a href="/app/analise-detalhes" class="analise-card">
+      <!-- Egograma — status dinâmico -->
+      <a href={egoHref} class="analise-card">
         <div class="analise-card__header">
           <h2 class="analise-card__title">Egograma</h2>
-          <span class="status-badge status-badge--pending">PENDENTE</span>
+          {egoStatus === 'done'
+            ? <span class="status-badge status-badge--done">CONCLUÍDO</span>
+            : <span class="status-badge status-badge--pending">PENDENTE</span>
+          }
         </div>
         <p class="analise-card__desc">Mapeie seus estados de ego e entenda como você reage a conflitos internos e externos.</p>
         <div class="analise-card__footer">
@@ -28,31 +131,17 @@ import AppLayout from '@/layouts/AppLayout.astro';
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             15 min
           </div>
-          <span class="analise-action">Ver detalhes &rarr;</span>
-        </div>
-      </a>
-
-      <!-- Avaliação DISC -->
-      <a href="/app/analise-detalhes" class="analise-card">
-        <div class="analise-card__header">
-          <h2 class="analise-card__title">Avaliação DISC</h2>
-          <span class="status-badge status-badge--done">CONCLUÍDO</span>
-        </div>
-        <p class="analise-card__desc">Analise seu perfil comportamental: Dominância, Influência, Estabilidade e Conformidade.</p>
-        <div class="analise-card__footer">
-          <div class="analise-time">
-            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-            20 min
-          </div>
-          <span class="analise-action">Ver detalhes &rarr;</span>
+          <span class="analise-action">{egoAction}</span>
         </div>
       </a>
 
       <!-- Eneagrama -->
-      <a href="/app/analise-detalhes" class="analise-card">
+      <a href={enneHref} class="analise-card">
         <div class="analise-card__header">
           <h2 class="analise-card__title">Eneagrama</h2>
-          <span class="status-badge status-badge--done">CONCLUÍDO</span>
+          <span class={`status-badge ${enneStatus === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
+            {enneStatus === 'done' ? 'CONCLUÍDO' : 'PENDENTE'}
+          </span>
         </div>
         <p class="analise-card__desc">Descubra seu tipo de personalidade principal e seus padrões de motivação profunda.</p>
         <div class="analise-card__footer">
@@ -60,7 +149,25 @@ import AppLayout from '@/layouts/AppLayout.astro';
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             25 min
           </div>
-          <span class="analise-action">Ver detalhes &rarr;</span>
+          <span class="analise-action">{enneAction}</span>
+        </div>
+      </a>
+
+      <!-- DISC -->
+      <a href={discHref} class="analise-card">
+        <div class="analise-card__header">
+          <h2 class="analise-card__title">DISC</h2>
+          <span class={`status-badge ${discStatus === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
+            {discStatus === 'done' ? 'CONCLUÍDO' : 'PENDENTE'}
+          </span>
+        </div>
+        <p class="analise-card__desc">Identifique seu perfil comportamental predominante: Dominante, Influente, Estável ou Criterioso.</p>
+        <div class="analise-card__footer">
+          <div class="analise-time">
+            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
+            15 min
+          </div>
+          <span class="analise-action">{discAction}</span>
         </div>
       </a>
     </div>
@@ -119,7 +226,7 @@ import AppLayout from '@/layouts/AppLayout.astro';
     transition: border-color 300ms ease;
   }
   .analise-card:hover {
-    border-color: rgba(212, 175, 55, 0.5); /* #D4AF37 com opacidade */
+    border-color: rgba(212, 175, 55, 0.5);
   }
 
   .analise-card__header {

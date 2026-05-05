@@ -1,0 +1,152 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const menuItems = [
+  { label: 'Editar Perfil', href: '#editar', icon: 'user' },
+  { label: 'Minhas Anotações', href: '#anotacoes', icon: 'note' },
+  { label: 'Favoritos', href: '#favoritos', icon: 'heart' },
+  { label: 'Notificações', href: '#notificacoes', icon: 'bell' },
+  { label: 'Link de Afiliação', href: '#afiliacao', icon: 'link', premium: true },
+];
+
+const legalItems = [
+  { label: 'Termos de Uso', href: '#termos' },
+  { label: 'Ajuda', href: '#ajuda' },
+  { label: 'Suporte', href: '#suporte' },
+];
+---
+
+<AppLayout title="Perfil" activeNav="perfil">
+  <div class="perfil-page">
+
+    <!-- Header do perfil -->
+    <div class="perfil-header">
+      <div class="perfil-avatar">
+        <span class="perfil-avatar__initials">MQ</span>
+      </div>
+      <div class="perfil-identity">
+        <h1 class="perfil-name">Mario Quirino</h1>
+        <p class="perfil-email">mario@mqaccess.com.br</p>
+        <span class="badge-gold">Membro PRO</span>
+      </div>
+    </div>
+
+    <!-- Menu principal -->
+    <nav class="menu-section">
+      {menuItems.map((item) => (
+        <a href={item.href} class="menu-item">
+          <span class="menu-item__label">
+            {item.label}
+            {item.premium && <span class="badge-gold menu-badge">Premium</span>}
+          </span>
+          <svg class="menu-item__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </a>
+      ))}
+    </nav>
+
+    <hr class="divider" />
+
+    <!-- Menu legal -->
+    <nav class="menu-section">
+      {legalItems.map((item) => (
+        <a href={item.href} class="menu-item">
+          <span class="menu-item__label">{item.label}</span>
+          <svg class="menu-item__chevron" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <polyline points="9 18 15 12 9 6" />
+          </svg>
+        </a>
+      ))}
+    </nav>
+
+    <hr class="divider" />
+
+    <!-- Sair -->
+    <a href="/auth/login" class="menu-item menu-item--destructive" id="logout-btn">
+      <span class="menu-item__label">Sair</span>
+    </a>
+
+  </div>
+</AppLayout>
+
+<style>
+  .perfil-page { padding: 24px 16px 32px; max-width: 640px; margin: 0 auto; }
+
+  /* Header do perfil */
+  .perfil-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 32px;
+    padding: 20px;
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+  }
+
+  .perfil-avatar {
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, rgba(201,169,110,0.15), rgba(201,169,110,0.05));
+    border: 1px solid rgba(201,169,110,0.2);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    flex-shrink: 0;
+  }
+
+  .perfil-avatar__initials {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #C9A96E;
+  }
+
+  .perfil-identity { display: flex; flex-direction: column; gap: 4px; }
+  .perfil-name {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #F5F5F5;
+  }
+  .perfil-email { font-size: 0.8125rem; color: #4A4A4A; }
+
+  /* Menu sections */
+  .menu-section { display: flex; flex-direction: column; }
+  .menu-section + .divider { margin: 4px 0; }
+
+  .menu-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 16px 4px;
+    text-decoration: none;
+    background: transparent;
+    border: none;
+    cursor: pointer;
+    width: 100%;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background-color 200ms ease;
+  }
+  .menu-item:last-child { border-bottom: none; }
+  .menu-item:hover { background-color: rgba(255,255,255,0.02); border-radius: 4px; }
+
+  .menu-item__label {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 400;
+    color: #F5F5F5;
+  }
+
+  .menu-badge { font-size: 0.625rem; }
+
+  .menu-item__chevron { color: #4A4A4A; flex-shrink: 0; }
+
+  .menu-item--destructive .menu-item__label { color: rgba(239, 68, 68, 0.6); }
+  .menu-item--destructive:hover .menu-item__label { color: #ef4444; }
+</style>

@@ -1,0 +1,110 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+import { supabase } from '@/lib/supabase';
+
+let errorMessage = '';
+let successMessage = '';
+
+if (Astro.request.method === 'POST') {
+  const formData    = await Astro.request.formData();
+  const newPassword = formData.get('password')?.toString() ?? '';
+  const confirm     = formData.get('confirm-password')?.toString() ?? '';
+
+  if (newPassword.length < 8) {
+    errorMessage = 'A senha deve ter pelo menos 8 caracteres.';
+  } else if (newPassword !== confirm) {
+    errorMessage = 'As senhas não coincidem.';
+  } else {
+    // O Supabase valida a sessão via cookie de recovery automaticamente
+    const { error } = await supabase.auth.updateUser({ password: newPassword });
+
+    if (error) {
+      errorMessage = 'Não foi possível redefinir a senha. O link pode ter expirado.';
+    } else {
+      return Astro.redirect('/auth/login?password_updated=1');
+    }
+  }
+}
+---
+
+<AuthLayout title="Nova Senha">
+  <div class="auth-form-card">
+    <div class="auth-form-header">
+      <img src="/images/logohorizontal.png" class="h-12 w-auto mx-auto mb-8" alt="MQ ACCESS" />
+      <h1 class="auth-form-title">Criar nova senha</h1>
+      <p class="auth-form-subtitle">Escolha uma senha forte para sua conta</p>
+    </div>
+
+    <form class="auth-form" id="nova-senha-form" method="POST" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="password">Nova senha</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          class="input"
+          placeholder="Mínimo 8 caracteres"
+          autocomplete="new-password"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="confirm-password">Confirmar nova senha</label>
+        <input
+          type="password"
+          id="confirm-password"
+          name="confirm-password"
+          class="input"
+          placeholder="Repita a senha"
+          autocomplete="new-password"
+          required
+        />
+      </div>
+
+      {errorMessage && (
+        <p class="auth-error" role="alert">{errorMessage}</p>
+      )}
+
+      <button type="submit" class="btn-primary btn-full" id="nova-senha-submit">
+        Redefinir Senha
+      </button>
+    </form>
+  </div>
+</AuthLayout>
+
+<script>
+  document.getElementById('nova-senha-form')?.addEventListener('submit', () => {
+    const btn = document.getElementById('nova-senha-submit') as HTMLButtonElement;
+    if (btn) { btn.textContent = 'Salvando…'; btn.disabled = true; }
+  });
+</script>
+
+<style>
+  .auth-form-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 32px;
+  }
+  .auth-form-header { margin-bottom: 28px; text-align: center; }
+  .auth-form-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 8px;
+  }
+  .auth-form-subtitle { font-size: 0.875rem; color: #A0A0A0; }
+  .auth-form { display: flex; flex-direction: column; gap: 16px; }
+  .form-group { display: flex; flex-direction: column; gap: 6px; }
+  .form-label { font-size: 0.8125rem; font-weight: 500; color: #A0A0A0; }
+  .btn-full { width: 100%; margin-top: 8px; height: 48px; font-size: 0.9375rem; }
+  .auth-error {
+    font-size: 0.8rem;
+    color: #ef4444;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    margin-top: -4px;
+  }
+</style>

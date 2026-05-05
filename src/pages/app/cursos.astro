@@ -1,0 +1,116 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+// ── Helper: centavos → "R$ 1.997" ─────────────────────────────────────────
+const brl = (cents: number) =>
+  (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+const locals = Astro.locals;
+
+const { data: cursos, error: cursosError } = await locals.supabase
+  .from('products')
+  .select('*')
+  .eq('type', 'masterclass')
+  .order('created_at', { ascending: false });
+
+if (cursosError) console.error("🚨 Erro ao buscar cursos:", cursosError);
+---
+
+<AppLayout title="Todos os Cursos" activeNav="home">
+  <div class="home-page">
+    
+    <!-- Botão Voltar -->
+    <a href="/app/home" class="inline-flex items-center text-xs font-medium text-[#C9A96E] hover:text-[#E8D5A3] transition-colors mb-8 uppercase tracking-widest">
+      ← Voltar para Home
+    </a>
+
+    <!-- Header -->
+    <header class="mb-10">
+      <h1 class="text-3xl md:text-4xl font-bold text-[#F5F5F5] font-serif mb-2">Todos os Cursos</h1>
+      <p class="text-sm md:text-base text-neutral-400">Aprofunde seu conhecimento com nossas masterclasses exclusivas.</p>
+    </header>
+
+    <!-- Grid -->
+    <div class="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-6">
+      {cursos && cursos.length > 0 ? cursos.map((curso) => (
+        <a href={`/app/detalhes?id=${curso.id}`} class="card card-reveal course-card" style="text-decoration:none;display:block;">
+          <div class="course-thumb">
+            <img
+              src={curso.thumbnail_url || '/assets/placeholder-curso.webp'}
+              alt={curso.title}
+              class="course-thumb__img"
+              loading="lazy"
+            />
+          </div>
+          <div class="course-info">
+            <p class="course-instructor">{curso.author ?? 'Mario Quirino'}</p>
+            <h3 class="course-title">{curso.title}</h3>
+            <div class="course-footer">
+              <span class="badge-gold">Exclusivo</span>
+              <span class="btn-primary course-cta">
+                {curso.price_brl ? brl(curso.price_brl) : 'Adquirir'}
+              </span>
+            </div>
+          </div>
+        </a>
+      )) : (
+        <p class="text-neutral-500 italic col-span-full">Novos cursos serão adicionados em breve.</p>
+      )}
+    </div>
+
+  </div>
+</AppLayout>
+
+<style>
+  .home-page {
+    padding: 24px 16px 32px;
+    max-width: 960px;
+    margin: 0 auto;
+  }
+
+  /* === Replicando CSS exato da Home === */
+  .course-card { min-width: 240px; padding: 0; overflow: hidden; background: #080808; border: 1px solid rgba(255,255,255,0.05); border-radius: 12px; transition: border-color 0.3s; }
+  .course-card:hover { border-color: rgba(201,169,110,0.3); }
+  .course-thumb {
+    height: 140px;
+    position: relative;
+    overflow: hidden;
+    background: #0A0A0A;
+    border-bottom: 1px solid rgba(255,255,255,0.05);
+  }
+  .course-thumb__img {
+    width: 100%; height: 100%;
+    object-fit: cover;
+    object-position: center;
+    transition: transform 400ms ease;
+    filter: brightness(0.75);
+  }
+  .course-card:hover .course-thumb__img { transform: scale(1.04); }
+  .course-info { padding: 16px; }
+  .course-instructor { font-size: 0.75rem; color: #C9A96E; margin-bottom: 4px; }
+  .course-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1rem;
+    color: #F5F5F5;
+    margin-bottom: 12px;
+    line-height: 1.3;
+  }
+  .course-footer { display: flex; align-items: center; justify-content: space-between; }
+  .course-cta { padding: 8px 14px; font-size: 0.8125rem; background: #C9A96E; color: #000; border-radius: 6px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; transition: all 0.2s;}
+  .course-cta:hover { background: #E8D5A3; }
+  
+  .badge-gold {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: rgba(201,169,110,0.1);
+    border: 1px solid rgba(201,169,110,0.2);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: #C9A96E;
+  }
+</style>

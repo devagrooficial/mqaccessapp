@@ -1,0 +1,220 @@
+---
+import AuthLayout from '@/layouts/AuthLayout.astro';
+import { supabase } from '@/lib/supabase';
+
+let errorMessage = '';
+const registered      = Astro.url.searchParams.get('registered') === '1';
+const passwordUpdated = Astro.url.searchParams.get('password_updated') === '1';
+
+// URL de destino pós-login (passada pelo middleware via ?next=)
+const nextUrl = Astro.url.searchParams.get('next') ?? '/app/home';
+
+if (Astro.request.method === 'POST') {
+  const formData = await Astro.request.formData();
+  const email    = formData.get('email')?.toString().trim() ?? '';
+  const password = formData.get('password')?.toString() ?? '';
+
+  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+  if (error || !data.session) {
+    errorMessage = (error?.message === 'Invalid login credentials')
+      ? 'E-mail ou senha incorretos. Verifique seus dados.'
+      : (error?.message ?? 'Erro ao autenticar. Tente novamente.');
+  } else {
+    // ── Grava tokens em cookies httpOnly para o middleware SSR ──────────────
+    const cookieOpts = {
+      path:     '/',
+      httpOnly: true,
+      secure:   import.meta.env.PROD, // false em dev para funcionar sem HTTPS
+      sameSite: 'lax' as const,
+      maxAge:   60 * 60 * 24 * 7,    // 7 dias
+    };
+    Astro.cookies.set('sb-access-token',  data.session.access_token,  cookieOpts);
+    Astro.cookies.set('sb-refresh-token', data.session.refresh_token, cookieOpts);
+
+    // Redireciona para a URL de destino (ou home)
+    return Astro.redirect(nextUrl.startsWith('/app') ? nextUrl : '/app/home');
+  }
+}
+---
+
+<AuthLayout title="Entrar">
+  <div class="auth-form-card">
+    <div class="auth-form-header">
+      <img src="/images/logohorizontal.png" class="h-12 w-auto mx-auto mb-8" alt="MQ ACCESS" />
+      <h1 class="auth-form-title">Bem-vindo de volta</h1>
+      <p class="auth-form-subtitle">Acesse sua conta MQ ACCESS</p>
+    </div>
+
+    {registered && (
+      <div class="auth-banner auth-banner--success" role="alert">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Conta criada! Verifique seu e-mail para confirmar o cadastro.
+      </div>
+    )}
+    {passwordUpdated && (
+      <div class="auth-banner auth-banner--success" role="alert">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>
+        Senha redefinida com sucesso! Faça login abaixo.
+      </div>
+    )}
+
+    <form class="auth-form" id="login-form" method="POST" novalidate>
+      <div class="form-group">
+        <label class="form-label" for="email">E-mail</label>
+        <input
+          type="email"
+          id="email"
+          name="email"
+          class="input"
+          placeholder="seu@email.com"
+          autocomplete="email"
+          required
+        />
+      </div>
+
+      <div class="form-group">
+        <label class="form-label" for="password">Senha</label>
+        <input
+          type="password"
+          id="password"
+          name="password"
+          class="input"
+          placeholder="••••••••"
+          autocomplete="current-password"
+          required
+        />
+        <a href="/auth/esqueceu-senha" class="form-link-right">Esqueceu a senha?</a>
+      </div>
+
+      {errorMessage && (
+        <p class="auth-error" role="alert">{errorMessage}</p>
+      )}
+
+      <button type="submit" class="btn-primary btn-full" id="login-submit">
+        Entrar
+      </button>
+    </form>
+
+    <p class="auth-switch-text">
+      Ainda não tem conta?
+      <a href="/auth/cadastro" class="auth-switch-link">Criar conta</a>
+    </p>
+  </div>
+</AuthLayout>
+
+<script>
+  document.getElementById('login-form')?.addEventListener('submit', () => {
+    const btn = document.getElementById('login-submit') as HTMLButtonElement;
+    if (btn) { btn.textContent = 'Autenticando…'; btn.disabled = true; }
+  });
+</script>
+
+<style>
+  .auth-form-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255, 255, 255, 0.05);
+    border-radius: 8px;
+    padding: 32px;
+  }
+
+  .auth-form-header {
+    margin-bottom: 28px;
+    text-align: center;
+  }
+
+  .auth-form-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 8px;
+  }
+
+  .auth-form-subtitle {
+    font-size: 0.875rem;
+    color: #A0A0A0;
+  }
+
+  .auth-form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  .form-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+  }
+
+  .form-label {
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #A0A0A0;
+    font-family: 'Inter', sans-serif;
+  }
+
+  .form-link-right {
+    position: absolute;
+    right: 0;
+    top: 0;
+    font-size: 0.75rem;
+    color: #C9A96E;
+    transition: color 200ms ease;
+  }
+
+  .form-link-right:hover {
+    color: #E8D5A3;
+  }
+
+  .auth-error {
+    font-size: 0.8rem;
+    color: #ef4444;
+    text-align: center;
+    font-family: 'Inter', sans-serif;
+    margin-top: -4px;
+  }
+
+  .btn-full {
+    width: 100%;
+    margin-top: 8px;
+    height: 48px;
+    font-size: 0.9375rem;
+  }
+
+  .auth-switch-text {
+    text-align: center;
+    font-size: 0.8125rem;
+    color: #4A4A4A;
+    margin-top: 20px;
+  }
+
+  .auth-switch-link {
+    color: #C9A96E;
+    font-weight: 500;
+    transition: color 200ms ease;
+  }
+
+  .auth-switch-link:hover {
+    color: #E8D5A3;
+  }
+
+  /* Banner de feedback (sucesso/erro contextual) */
+  .auth-banner {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 0.8rem;
+    font-family: 'Inter', sans-serif;
+    border-radius: 6px;
+    padding: 10px 14px;
+    margin-bottom: 4px;
+  }
+  .auth-banner--success {
+    background: rgba(34, 197, 94, 0.06);
+    border: 1px solid rgba(34, 197, 94, 0.2);
+    color: #4ade80;
+  }
+</style>

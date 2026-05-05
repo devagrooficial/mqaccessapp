@@ -1,0 +1,527 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+if (!user) return Astro.redirect('/auth/login');
+
+const assessmentId = Astro.url.searchParams.get('id');
+if (!assessmentId) return Astro.redirect('/app/analises');
+
+// ── POST: reset de assessment ────────────────────────────────────────────────
+if (Astro.request.method === 'POST') {
+  const fd = await Astro.request.formData();
+  if (fd.get('action') === 'reset_assessment') {
+    await supabase.from('disc_assessments').delete()
+      .eq('id', assessmentId).eq('user_id', user.id);
+    return Astro.redirect('/app/disc/pergunta');
+  }
+}
+
+// ── Verifica ownership ───────────────────────────────────────────────────────
+const { data: assessment, error: assessmentError } = await supabase
+  .from('disc_assessments')
+  .select('id, user_id, created_at')
+  .eq('id', assessmentId).eq('user_id', user.id).single();
+
+if (assessmentError || !assessment) return Astro.redirect('/app/analises');
+
+// ── Busca respostas ─────────────────────────────────────────────────────────
+const { data: answers } = await supabase
+  .from('disc_answers')
+  .select('disc_type')
+  .eq('assessment_id', assessmentId);
+
+const safeAnswers = answers ?? [];
+
+// ── Validação: menos de 30 respostas → volta pro quiz ───────────────────────
+if (safeAnswers.length < 30) {
+  return Astro.redirect(`/app/disc/pergunta`);
+}
+
+// ── Motor de cálculo: conta ocorrências de D, I, S, C ───────────────────────
+const counts: Record<string, number> = { D: 0, I: 0, S: 0, C: 0 };
+for (const row of safeAnswers) {
+  const t = String(row.disc_type).toUpperCase();
+  if (t in counts) counts[t]++;
+}
+
+const pct = (letra: string) => Math.round((counts[letra] / 30) * 100);
+
+const scores = {
+  D: { count: counts['D'], percent: pct('D') },
+  I: { count: counts['I'], percent: pct('I') },
+  S: { count: counts['S'], percent: pct('S') },
+  C: { count: counts['C'], percent: pct('C') },
+};
+
+// Perfil dominante = letra com maior contagem
+const letraDominante = (['D','I','S','C'] as const).reduce((a, b) =>
+  counts[b] > counts[a] ? b : a
+);
+
+// ── Dicionário de perfis executivos ─────────────────────────────────────────
+const discDict: Record<string, any> = {
+  'D': {
+    nome: 'A Dominância / O Executor',
+    resumo: 'Decide com velocidade, focado em resultados e desafios. Líderes natos que prosperam em ambientes de alta pressão e competição.',
+    fortes: ['Decisivo e rápido', 'Foco implacável em resultados', 'Audacioso e corajoso', 'Assume riscos calculados'],
+    limitantes: ['Pode ser autoritário', 'Impaciência com processos', 'Pouca escuta ativa', 'Inflexível sob pressão'],
+    cor: '#EF4444',
+    corBg: 'rgba(239,68,68,0.08)',
+    corBorder: 'rgba(239,68,68,0.25)',
+    comunicacao: "Seja direto, pule os rodeios e traga resultados. Foque no 'O QUÊ' e não perca tempo com detalhes emocionais.",
+    pressao: 'Tende a se tornar autoritário, ditatorial e impaciente. Pode atropelar a equipe para garantir a entrega a qualquer custo.',
+    ambiente: 'Ecossistemas desafiadores, competitivos, livres de microgerenciamento e com alta autonomia para tomar decisões rápidas.',
+    pdi: {
+      pratica: 'Liderar um projeto crítico com prazo curto e autonomia total sobre as decisões de risco.',
+      pessoas: 'Pedir feedback estruturado sobre como sua velocidade de decisão afeta a equipe e os processos.',
+      estudo: 'Livros sobre Escuta Ativa, Liderança Empática e Inteligência Emocional aplicada ao poder.',
+    },
+  },
+  'I': {
+    nome: 'A Influência / O Comunicador',
+    resumo: 'Comunica com facilidade, persuasivo e focado em pessoas. Constroem redes de influência com naturalidade e criam ambientes motivadores.',
+    fortes: ['Carismático e persuasivo', 'Otimista e energizante', 'Excelente em networking', 'Motivador nato'],
+    limitantes: ['Pode ser desorganizado', 'Perde o foco com facilidade', 'Dificuldade com detalhes', 'Impulsivo em decisões'],
+    cor: '#F59E0B',
+    corBg: 'rgba(245,158,11,0.08)',
+    corBorder: 'rgba(245,158,11,0.25)',
+    comunicacao: "Seja caloroso, mostre entusiasmo e construa relacionamento antes de ir direto aos negócios. Foque no 'QUEM'.",
+    pressao: 'Pode se tornar excessivamente emocional, desorganizado e prometer prazos ou entregas irreais para evitar conflitos.',
+    ambiente: 'Ecossistemas dinâmicos, interativos, sem rotinas rígidas, onde haja espaço para colaboração e reconhecimento público.',
+    pdi: {
+      pratica: 'Apresentar um pitch de vendas ou conduzir um treinamento de equipe do início ao fim.',
+      pessoas: 'Buscar um mentor analítico para ajudar na estruturação de projetos e gestão do tempo.',
+      estudo: 'Livros sobre Gestão do Tempo, Foco Profundo e Execução com Disciplina.',
+    },
+  },
+  'S': {
+    nome: 'A Estabilidade / O Planejador',
+    resumo: 'Jogador de equipe, cooperativo, previsível e leal. A âncora da organização — confiável e comprometido com a harmonia do grupo.',
+    fortes: ['Parte da equipe e leal', 'Paciente e confiável', 'Grande ouvinte ativo', 'Executor consistente e estável'],
+    limitantes: ['Passivo demais em conflitos', 'Evita riscos e mudanças', 'Dificuldade com assertividade', 'Faz uma coisa de cada vez'],
+    cor: '#4ADE80',
+    corBg: 'rgba(74,222,128,0.08)',
+    corBorder: 'rgba(74,222,128,0.25)',
+    comunicacao: "Apresente ideias com calma, mostre os passos de forma estruturada e evite pressionar por decisões imediatas. Foque no 'COMO'.",
+    pressao: 'Tende a se tornar passivo-agressivo, teimoso e resiste silenciosamente a mudanças repentinas.',
+    ambiente: 'Ecossistemas estáveis, harmônicos, com regras claras, segurança psicológica e forte espírito de cooperação em equipe.',
+    pdi: {
+      pratica: 'Mediar um conflito real na equipe usando sua calma natural como vantagem estratégica.',
+      pessoas: 'Falar abertamente sobre um incômodo antes de acumulá-lo — praticar conversas difíceis.',
+      estudo: 'Livros sobre Gestão de Mudanças, Assertividade e Comunicação Não-Violenta.',
+    },
+  },
+  'C': {
+    nome: 'A Conformidade / O Analista',
+    resumo: 'Rigoroso na análise, focado em alta qualidade, regras e precisão. O guardião dos padrões — transforma dados em decisões sólidas.',
+    fortes: ['Minucioso e detalhista', 'Alto padrão de excelência', 'Pensamento crítico afiado', 'Organizado e lógico'],
+    limitantes: ['Paralisia por análise', 'Perfeccionismo extremo', 'Dificuldade em delegar', 'Crítico em excesso'],
+    cor: '#60A5FA',
+    corBg: 'rgba(96,165,250,0.08)',
+    corBorder: 'rgba(96,165,250,0.25)',
+    comunicacao: "Traga dados, fatos e argumentos lógicos. Esteja preparado para responder perguntas detalhadas. Foque no 'POR QUÊ'.",
+    pressao: 'Sofre paralisia por análise. Torna-se excessivamente crítico, exigente e pode se isolar para tentar resolver o problema sozinho.',
+    ambiente: 'Ecossistemas silenciosos, organizados, que valorizem a precisão, o alto padrão de qualidade e não exijam improvisos constantes.',
+    pdi: {
+      pratica: 'Tomar uma decisão estratégica com apenas 80% dos dados disponíveis — praticar agilidade.',
+      pessoas: 'Fazer alinhamentos rápidos e presenciais em vez de apenas enviar relatórios e e-mails.',
+      estudo: 'Livros sobre Tomada de Decisão Sob Pressão, Agilidade Executiva e Gestão de Risco.',
+    },
+  },
+};
+
+const perfil = discDict[letraDominante];
+
+const completedDate = new Date(assessment.created_at).toLocaleDateString('pt-BR', {
+  day: '2-digit', month: 'long', year: 'numeric',
+});
+
+// ── Radar SVG 4 vértices ─────────────────────────────────────────────────────
+// Topo=D, Direita=I, Baixo=S, Esquerda=C (ordem horária a partir do topo)
+const radarLetters = ['D', 'I', 'S', 'C'];
+const radarAngles  = radarLetters.map((_, i) => (Math.PI * 2 / 4) * i - Math.PI / 2);
+const CX = 120; const CY = 120; const R = 95;
+---
+
+<AppLayout
+  title={`Relatório DISC — ${perfil.nome}`}
+  activeNav="analises"
+>
+  <div class="report-page">
+
+    <!-- Header -->
+    <div class="report-header">
+      <a href="/app/analises" class="report-back">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M19 12H5M12 19l-7-7 7-7"/></svg>
+        Voltar às Análises
+      </a>
+      <div style="display:flex; justify-content:space-between; align-items:flex-end; flex-wrap:wrap; gap:8px;">
+        <h1 class="report-title">Relatório: DISC</h1>
+        {completedDate && <span style="font-size:0.75rem; color:#4A4A4A;">{completedDate}</span>}
+      </div>
+    </div>
+
+    <!-- ── Hero: Veredito ── -->
+    <section class="report-verdict" style={`border-color:${perfil.corBorder}; background:${perfil.corBg};`}>
+      <div class="verdict-letter" style={`color:${perfil.cor}; border-color:${perfil.corBorder};`}>
+        {letraDominante}
+      </div>
+      <p class="verdict-eyebrow" style={`color:${perfil.cor};`}>PERFIL PREDOMINANTE</p>
+      <h2 class="verdict-title">{perfil.nome}</h2>
+      <p class="verdict-desc">{perfil.resumo}</p>
+    </section>
+
+    <!-- ── Radar + Barras ── -->
+    <section class="report-section">
+      <h3 class="section-title">Distribuição do Perfil</h3>
+
+      <!-- Radar SVG 4 eixos -->
+      <div class="radar-wrap" aria-hidden="true">
+        <svg class="radar-svg" viewBox="0 0 240 240" xmlns="http://www.w3.org/2000/svg">
+          <!-- Grids -->
+          {[20,40,60,80,100].map(r => {
+            const s = r * 0.95;
+            const pts = radarAngles.map(a => `${CX+Math.cos(a)*s},${CY+Math.sin(a)*s}`).join(' ');
+            return <polygon points={pts} fill="none" stroke="rgba(255,255,255,0.05)" stroke-width="1"/>;
+          })}
+          <!-- Eixos -->
+          {radarAngles.map(a => (
+            <line x1={CX} y1={CY} x2={CX+Math.cos(a)*R} y2={CY+Math.sin(a)*R} stroke="rgba(255,255,255,0.07)" stroke-width="1"/>
+          ))}
+          <!-- Polígono de dados -->
+          <polygon
+            points={radarLetters.map((l, i) => {
+              const r = (scores[l].percent / 100) * R;
+              return `${CX+Math.cos(radarAngles[i])*r},${CY+Math.sin(radarAngles[i])*r}`;
+            }).join(' ')}
+            fill={`${perfil.cor}22`}
+            stroke={perfil.cor}
+            stroke-width="2"
+          />
+          <!-- Pontos e Labels -->
+          {radarLetters.map((l, i) => {
+            const r   = (scores[l].percent / 100) * R;
+            const lx  = CX + Math.cos(radarAngles[i]) * 110;
+            const ly  = CY + Math.sin(radarAngles[i]) * 110;
+            return (
+              <>
+                <circle cx={CX+Math.cos(radarAngles[i])*r} cy={CY+Math.sin(radarAngles[i])*r} r="4" fill={perfil.cor}/>
+                <text x={lx} y={ly} text-anchor="middle" dominant-baseline="middle" fill={discDict[l].cor} font-size="11" font-family="Inter,sans-serif" font-weight="700">{l}</text>
+              </>
+            );
+          })}
+        </svg>
+      </div>
+
+      <!-- Barras horizontais -->
+      <div class="bars-list">
+        {(['D','I','S','C'] as const).map(l => (
+          <div class="bar-row">
+            <div class="bar-row__label">
+              <span class="bar-letter" style={`color:${discDict[l].cor};`}>{l}</span>
+              <span class="bar-name">{discDict[l].nome.split('/')[1]?.trim() ?? discDict[l].nome}</span>
+            </div>
+            <div class="bar-track">
+              <div class="bar-fill" style={`width:${scores[l].percent}%; background:${discDict[l].cor};`}></div>
+            </div>
+            <span class="bar-pct" style={`color:${l === letraDominante ? discDict[l].cor : '#3A3A3A'};`}>
+              {scores[l].percent}%
+            </span>
+          </div>
+        ))}
+      </div>
+    </section>
+
+    <!-- ── Fortes / Limitantes ── -->
+    <section class="report-section">
+      <h3 class="section-title">Mapa de Competências</h3>
+      <div class="competencias-grid">
+
+        <div class="comp-card comp-card--strong">
+          <p class="comp-card__label">✦ Pontos Fortes</p>
+          <ul class="comp-list">
+            {perfil.fortes.map((f: string) => (
+              <li class="comp-item comp-item--strong">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#4ade80" stroke-width="2.5"><polyline points="20 6 9 17 4 12"/></svg>
+                {f}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div class="comp-card comp-card--limit">
+          <p class="comp-card__label">⚠ Pontos Limitantes</p>
+          <ul class="comp-list">
+            {perfil.limitantes.map((l: string) => (
+              <li class="comp-item comp-item--limit">
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2.5"><line x1="12" y1="9" x2="12" y2="13"/><line x1="12" y1="17" x2="12.01" y2="17"/><circle cx="12" cy="12" r="10"/></svg>
+                {l}
+              </li>
+            ))}
+          </ul>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── PDI 70-20-10 ── -->
+    <section class="report-section">
+      <h3 class="section-title">PDI — Plano de Desenvolvimento Individual</h3>
+      <p class="section-sub">Metodologia 70-20-10 para aceleração executiva</p>
+
+      <div class="pdi-grid">
+
+        <div class="pdi-card pdi-card--70">
+          <div class="pdi-header">
+            <span class="pdi-pct">70%</span>
+            <div>
+              <p class="pdi-method">PRÁTICA</p>
+              <p class="pdi-context">No campo — aprendizado pela experiência</p>
+            </div>
+          </div>
+          <p class="pdi-desc">{perfil.pdi.pratica}</p>
+        </div>
+
+        <div class="pdi-card pdi-card--20">
+          <div class="pdi-header">
+            <span class="pdi-pct">20%</span>
+            <div>
+              <p class="pdi-method">PESSOAS</p>
+              <p class="pdi-context">Mentoria e feedback estruturado</p>
+            </div>
+          </div>
+          <p class="pdi-desc">{perfil.pdi.pessoas}</p>
+        </div>
+
+        <div class="pdi-card pdi-card--10">
+          <div class="pdi-header">
+            <span class="pdi-pct">10%</span>
+            <div>
+              <p class="pdi-method">ESTUDO</p>
+              <p class="pdi-context">Conteúdo técnico e científico</p>
+            </div>
+          </div>
+          <p class="pdi-desc">{perfil.pdi.estudo}</p>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- ── Mapeamento de Atuação e Ambiente ── -->
+    <section class="report-section">
+      <h3 class="section-title">Mapeamento de Atuação e Ambiente</h3>
+      <p class="section-sub">Dossiê comportamental executivo — calibração de contexto</p>
+      <div class="atuacao-grid">
+
+        <div class="atuacao-card">
+          <div class="atuacao-icon" style={`background:${perfil.corBg}; border-color:${perfil.corBorder};`}>
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke={perfil.cor} stroke-width="2">
+              <path d="M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z"/>
+            </svg>
+          </div>
+          <p class="atuacao-label">CÓDIGO DE COMUNICAÇÃO</p>
+          <p class="atuacao-desc">{perfil.comunicacao}</p>
+        </div>
+
+        <div class="atuacao-card">
+          <div class="atuacao-icon" style="background:rgba(239,68,68,0.08); border-color:rgba(239,68,68,0.2);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#f87171" stroke-width="2">
+              <polygon points="13 2 3 14 12 14 11 22 21 10 12 10 13 2"/>
+            </svg>
+          </div>
+          <p class="atuacao-label" style="color:#f87171;">ATUAÇÃO SOB PRESSÃO</p>
+          <p class="atuacao-desc">{perfil.pressao}</p>
+        </div>
+
+        <div class="atuacao-card">
+          <div class="atuacao-icon" style="background:rgba(212,175,55,0.08); border-color:rgba(212,175,55,0.2);">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#D4AF37" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/>
+            </svg>
+          </div>
+          <p class="atuacao-label" style="color:#C9A96E;">ECOSSISTEMA DE ALTA PERFORMANCE</p>
+          <p class="atuacao-desc">{perfil.ambiente}</p>
+        </div>
+
+      </div>
+    </section>
+
+  </div>
+</AppLayout>
+
+<style>
+  .report-page {
+    padding: 24px 16px 60px;
+    max-width: 768px;
+    margin: 0 auto;
+    font-family: 'Inter', sans-serif;
+  }
+
+  /* Header */
+  .report-header { margin-bottom: 32px; }
+  .report-back {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-size: 0.8125rem; color: #3A3A3A; text-decoration: none;
+    margin-bottom: 16px; transition: color 200ms;
+  }
+  .report-back:hover { color: #A0A0A0; }
+  .report-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 700; color: #F5F5F5; line-height: 1.1;
+  }
+
+  /* Verdict */
+  .report-verdict {
+    border: 1px solid;
+    border-radius: 20px; padding: 36px 28px;
+    margin-bottom: 28px; text-align: center;
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+  }
+  .verdict-letter {
+    width: 72px; height: 72px; border-radius: 50%;
+    border: 2px solid;
+    font-family: 'Playfair Display', serif;
+    font-size: 2.25rem; font-weight: 900;
+    display: flex; align-items: center; justify-content: center;
+    margin-bottom: 4px;
+  }
+  .verdict-eyebrow {
+    font-size: 0.6875rem; font-weight: 700;
+    letter-spacing: 0.18em; text-transform: uppercase;
+  }
+  .verdict-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(1.5rem, 4vw, 2.25rem);
+    font-weight: 700; color: #F5F5F5;
+  }
+  .verdict-desc {
+    font-size: 0.9375rem; color: #6A6A6A; line-height: 1.7;
+    max-width: 520px; margin: 0 auto;
+  }
+
+  /* Section */
+  .report-section { margin-bottom: 32px; }
+  .section-title {
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.12em;
+    text-transform: uppercase; color: #3A3A3A; margin-bottom: 6px;
+  }
+  .section-sub {
+    font-size: 0.8125rem; color: #2A2A2A; margin-bottom: 16px;
+  }
+
+  /* Radar */
+  .radar-wrap { display: flex; justify-content: center; margin-bottom: 24px; }
+  .radar-svg  { width: 200px; height: 200px; overflow: visible; }
+
+  /* Bars */
+  .bars-list { display: flex; flex-direction: column; gap: 12px; }
+  .bar-row   { display: flex; align-items: center; gap: 12px; }
+  .bar-row__label { display: flex; align-items: center; gap: 8px; width: 160px; flex-shrink: 0; }
+  .bar-letter { font-size: 1rem; font-weight: 800; width: 18px; }
+  .bar-name   { font-size: 0.75rem; color: #4A4A4A; }
+  .bar-track  {
+    flex: 1; height: 6px; background: rgba(255,255,255,0.05);
+    border-radius: 999px; overflow: hidden;
+  }
+  .bar-fill   { height: 100%; border-radius: 999px; transition: width 700ms cubic-bezier(0.4,0,0.2,1); opacity: 0.8; }
+  .bar-pct    { font-size: 0.8125rem; font-weight: 700; width: 40px; text-align: right; flex-shrink: 0; }
+
+  /* Competências */
+  .competencias-grid {
+    display: grid; grid-template-columns: 1fr 1fr; gap: 12px;
+  }
+  @media (max-width: 500px) { .competencias-grid { grid-template-columns: 1fr; } }
+
+  .comp-card {
+    background: #080808; border-radius: 14px;
+    padding: 20px 18px; border: 1px solid rgba(255,255,255,0.05);
+  }
+  .comp-card--strong { border-top: 2px solid rgba(74,222,128,0.4); }
+  .comp-card--limit  { border-top: 2px solid rgba(248,113,113,0.4); }
+  .comp-card__label {
+    font-size: 0.6875rem; font-weight: 700; letter-spacing: 0.1em;
+    text-transform: uppercase; margin-bottom: 14px;
+  }
+  .comp-card--strong .comp-card__label { color: #4ade80; }
+  .comp-card--limit  .comp-card__label { color: #f87171; }
+
+  .comp-list { list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 10px; }
+  .comp-item {
+    display: flex; align-items: flex-start; gap: 8px;
+    font-size: 0.8125rem; line-height: 1.4;
+  }
+  .comp-item--strong { color: #6A6A6A; }
+  .comp-item--limit  { color: #6A6A6A; }
+  .comp-item svg { flex-shrink: 0; margin-top: 1px; }
+
+  /* PDI */
+  .pdi-grid {
+    display: grid; grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .pdi-card {
+    background: #080808; border-radius: 14px;
+    padding: 20px 20px; border: 1px solid rgba(255,255,255,0.05);
+    border-left: 3px solid;
+  }
+  .pdi-card--70 { border-left-color: #D4AF37; }
+  .pdi-card--20 { border-left-color: #60A5FA; }
+  .pdi-card--10 { border-left-color: #A78BFA; }
+
+  .pdi-header {
+    display: flex; align-items: flex-start; gap: 14px; margin-bottom: 12px;
+  }
+  .pdi-pct {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem; font-weight: 900; line-height: 1;
+    flex-shrink: 0;
+  }
+  .pdi-card--70 .pdi-pct { color: #D4AF37; }
+  .pdi-card--20 .pdi-pct { color: #60A5FA; }
+  .pdi-card--10 .pdi-pct { color: #A78BFA; }
+
+  .pdi-method {
+    font-size: 0.625rem; font-weight: 800; letter-spacing: 0.16em;
+    text-transform: uppercase; color: #F5F5F5; margin-bottom: 3px;
+  }
+  .pdi-context { font-size: 0.75rem; color: #3A3A3A; }
+  .pdi-desc    { font-size: 0.875rem; color: #6A6A6A; line-height: 1.65; }
+
+  /* Reset btn — removido */
+
+  /* ── Mapeamento de Atuação ── */
+  .atuacao-grid {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+  }
+  @media (max-width: 600px) { .atuacao-grid { grid-template-columns: 1fr; } }
+
+  .atuacao-card {
+    background: #080808;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 14px;
+    padding: 20px 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .atuacao-icon {
+    width: 40px; height: 40px; border-radius: 10px;
+    border: 1px solid;
+    display: flex; align-items: center; justify-content: center;
+    flex-shrink: 0;
+  }
+  .atuacao-label {
+    font-size: 0.5625rem; font-weight: 800;
+    letter-spacing: 0.16em; text-transform: uppercase;
+    color: #4A4A4A;
+  }
+  .atuacao-desc {
+    font-size: 0.8125rem; color: #6A6A6A;
+    line-height: 1.65; flex: 1;
+  }
+</style>

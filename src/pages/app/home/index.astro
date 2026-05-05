@@ -1,5 +1,214 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+
+// ── Helper: centavos → "R$ 1.997" ─────────────────────────────────────────
+const brl = (cents: number) =>
+  (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+
+// ── Helper: Date → { day, month } ─────────────────────────────────────────
+const dateParts = (iso: string) => {
+  const d = new Date(iso);
+  return {
+    day:   d.getUTCDate().toString().padStart(2, '0'),
+    month: d.toLocaleString('pt-BR', { month: 'short', timeZone: 'UTC' })
+           .toUpperCase().replace('.', ''),
+  };
+};
+
+// ── Cliente SSR autenticado (carrega cookies → passa no RLS) ───────────────
+const supabase = Astro.locals.supabase;
+const userId   = Astro.locals.user?.id ?? '';
+
+// ── Helpers de cálculo de perfil predominante ────────────────────────────────
+type BadgeResult = string | null;
+
+async function calcDiscBadge(): Promise<BadgeResult> {
+  if (!userId) return null;
+  const { data: lastAssessment } = await supabase
+    .from('disc_assessments')
+    .select('id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!lastAssessment?.id) return null;
+
+  const { data: answers } = await supabase
+    .from('disc_answers')
+    .select('disc_type')
+    .eq('assessment_id', lastAssessment.id);
+  if (!answers || answers.length < 30) return null;
+
+  const counts: Record<string, number> = { D: 0, I: 0, S: 0, C: 0 };
+  for (const row of answers) {
+    const t = String(row.disc_type).toUpperCase();
+    if (t in counts) counts[t]++;
+  }
+  const dominant = (['D','I','S','C'] as const).reduce((a, b) => counts[b] > counts[a] ? b : a);
+  const labelMap: Record<string, string> = {
+    D: 'Executor (D)', I: 'Comunicador (I)', S: 'Planejador (S)', C: 'Analista (C)',
+  };
+  return `DISC: ${labelMap[dominant]}`;
+}
+
+async function calcEneagramaBadge(): Promise<BadgeResult> {
+  if (!userId) return null;
+  const { data: lastAssessment } = await supabase
+    .from('enneagram_assessments')
+    .select('id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!lastAssessment?.id) return null;
+
+  const { data: answers } = await supabase
+    .from('enneagram_answers')
+    .select('enneatype, resposta')
+    .eq('assessment_id', lastAssessment.id);
+  if (!answers || answers.length < 45) return null;
+
+  const totals: Record<number, number> = {};
+  for (let t = 1; t <= 9; t++) totals[t] = 0;
+  for (const row of answers) {
+    const t = Number(row.enneatype);
+    if (t >= 1 && t <= 9) totals[t] += Number(row.resposta ?? 0);
+  }
+  const dominant = (Object.keys(totals) as unknown as number[])
+    .reduce((a, b) => totals[b] > totals[a] ? b : a);
+  const nameMap: Record<number, string> = {
+    1: 'Perfeccionista', 2: 'Prestativo', 3: 'Bem-Sucedido',
+    4: 'Individualista', 5: 'Observador', 6: 'Questionador',
+    7: 'Otimista', 8: 'Líder', 9: 'Mediador',
+  };
+  return `Eneagrama: Tipo ${dominant}`;
+}
+
+async function calcEgogramaBadge(): Promise<BadgeResult> {
+  if (!userId) return null;
+  const { data: lastAssessment } = await supabase
+    .from('egogram_assessments')
+    .select('id')
+    .eq('user_id', userId)
+    .order('created_at', { ascending: false })
+    .limit(1)
+    .maybeSingle();
+  if (!lastAssessment?.id) return null;
+
+  const { data: answers } = await supabase
+    .from('egogram_answers')
+    .select('tipo, resposta')
+    .eq('assessment_id', lastAssessment.id);
+  if (!answers || answers.length < 50) return null;
+
+  const scores: Record<string, number> = { PC: 0, PA: 0, A: 0, CL: 0, CA: 0 };
+  for (const row of answers) {
+    const t = String(row.tipo).toUpperCase();
+    if (t in scores) scores[t] += Number(row.resposta ?? 0);
+  }
+  const dominant = Object.keys(scores).reduce((a, b) => scores[b] > scores[a] ? b : a);
+  const labelMap: Record<string, string> = {
+    PC: 'Pai Crítico', PA: 'Pai Nutritivo', A: 'Adulto',
+    CL: 'Criança Livre', CA: 'Criança Adaptada',
+  };
+  return `Egograma: ${labelMap[dominant]}`;
+}
+
+const [
+  { data: courses },
+  { data: books },
+  { data: events },
+  { data: profile },
+  badgeDisc,
+  badgeEnea,
+  badgeEgo,
+  // ── KPI Counters — head:true = zero payload, apenas o inteiro ──────────────
+  { count: cursosRaw },
+  { count: eventosRaw },
+  { count: livrosRaw },
+] = await Promise.all([
+  // Masterclasses em destaque (máx 6)
+  supabase
+    .from('products')
+    .select('id, title, author, thumbnail_url, price_brl')
+    .eq('type', 'masterclass')
+    .eq('is_active', true)
+    .order('created_at', { ascending: false })
+    .limit(6),
+
+  // Livros (ebook + physical_book)
+  supabase
+    .from('products')
+    .select('id, title, author, cover_url, product_format')
+    .in('type', ['ebook', 'physical_book'])
+    .eq('is_active', true)
+    .limit(4),
+
+  // Próximos eventos (data futura)
+  supabase
+    .from('events')
+    .select('id, title, date, venue_name, banner_url')
+    .eq('is_active', true)
+    .gte('date', new Date().toISOString())
+    .order('date', { ascending: true })
+    .limit(3),
+
+  // Profile do usuário logado
+  userId
+    ? supabase.from('profiles').select('full_name').eq('id', userId).single()
+    : Promise.resolve({ data: null }),
+
+  // Badges comportamentais (paralelo — zero custo extra se não houver assessments)
+  calcDiscBadge(),
+  calcEneagramaBadge(),
+  calcEgogramaBadge(),
+
+  // ── KPI: Cursos adquiridos (approved) ────────────────────────────────────────
+  // Espelha exatamente digitalPurchases em compras/index.astro:
+  // purchases JOIN products WHERE type = 'masterclass' AND payment_status = 'approved'
+  userId
+    ? supabase
+        .from('purchases')
+        .select('id, products!inner(type)', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('payment_status', 'approved')
+        .eq('products.type', 'masterclass')
+    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+
+  // ── KPI: Ingressos de Eventos ─────────────────────────────────────────────────
+  // Espelha exatamente meusIngressos em compras/index.astro:
+  // tickets WHERE user_id = userId
+  userId
+    ? supabase
+        .from('tickets')
+        .select('id', { count: 'exact', head: true })
+        .eq('user_id', userId)
+    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+
+  // ── KPI: Livros na Biblioteca ─────────────────────────────────────────────────
+  // Espelha exatamente ebookPurchases em compras/index.astro:
+  // purchases JOIN products WHERE type IN ('ebook','book') AND payment_status = 'approved'
+  userId
+    ? supabase
+        .from('purchases')
+        .select('id, products!inner(type)', { count: 'exact', head: true })
+        .eq('user_id', userId)
+        .eq('payment_status', 'approved')
+        .in('products.type', ['ebook', 'book'])
+    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+]);
+
+// Fallback para quando o banco ainda não tem dados
+const courseList  = courses  ?? [];
+const bookList    = books    ?? [];
+const eventList   = events   ?? [];
+const firstName   = (profile as any)?.full_name?.split(' ')[0] ?? 'Executivo';
+const hasBadges   = badgeDisc || badgeEnea || badgeEgo;
+
+// KPI safe fallbacks
+const cursosCount  = cursosRaw  ?? 0;
+const eventosCount = eventosRaw ?? 0;
+const livrosCount  = livrosRaw  ?? 0;
 ---
 
 <AppLayout title="Home" activeNav="home">
@@ -7,8 +216,8 @@ import AppLayout from '@/layouts/AppLayout.astro';
 
     <!-- Saudação -->
     <section class="home-greeting">
-      <p class="greeting-label">Bom dia,</p>
-      <h1 class="greeting-name">Executivo <span class="greeting-badge badge-gold">PRO</span></h1>
+      <p class="greeting-label">Bem-vindo de volta,</p>
+      <h1 class="greeting-name">{firstName} <span class="greeting-badge badge-gold">PRO</span></h1>
     </section>
 
     <!-- KPIs / Análises -->
@@ -16,12 +225,12 @@ import AppLayout from '@/layouts/AppLayout.astro';
       <h2 class="section-title">Análises</h2>
       <div class="kpi-grid">
         <div class="card card-reveal kpi-card">
-          <p class="kpi-label">Cursos Concluídos</p>
-          <p class="kpi-value">3</p>
+          <p class="kpi-label">Cursos Adquiridos</p>
+          <p class="kpi-value">{cursosCount}</p>
         </div>
         <div class="card card-reveal kpi-card">
-          <p class="kpi-label">Eventos Participados</p>
-          <p class="kpi-value">1</p>
+          <p class="kpi-label">Eventos</p>
+          <p class="kpi-value">{eventosCount}</p>
         </div>
         <div class="card card-reveal kpi-card">
           <p class="kpi-label">Assinatura</p>
@@ -29,24 +238,36 @@ import AppLayout from '@/layouts/AppLayout.astro';
         </div>
         <div class="card card-reveal kpi-card">
           <p class="kpi-label">Livros na Biblioteca</p>
-          <p class="kpi-value">7</p>
+          <p class="kpi-value">{livrosCount}</p>
         </div>
       </div>
     </section>
 
     <!-- Mapeamento Comportamental Banner -->
     <section class="home-section">
-      <div class="w-full bg-gradient-to-r from-[#111] to-[#000] border border-white/10 rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-center justify-between gap-6">
-        <div class="flex items-start gap-4">
-          <div class="text-[#D4AF37] shrink-0 mt-1">
-            <svg width="32" height="32" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
+      <div class="behavioral-banner">
+        <!-- Ícone + Texto -->
+        <div class="behavioral-left">
+          <div class="behavioral-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="10"/><circle cx="12" cy="12" r="6"/><circle cx="12" cy="12" r="2"/></svg>
           </div>
-          <div>
-            <h2 class="font-serif text-2xl font-bold text-white mb-2" style="font-family: 'Playfair Display', serif;">Mapeamento Comportamental</h2>
-            <p class="text-sm text-gray-400">Descubra seus vieses de decisão e seu perfil de liderança sob pressão.</p>
+          <div class="behavioral-text">
+            <h2 class="behavioral-title">Mapeamento Comportamental</h2>
+            <p class="behavioral-desc">Descubra seus vieses de decisão e seu perfil de liderança sob pressão.</p>
+
+            <!-- ── VIP Status Badges (apenas se concluído) ──────────────── -->
+            {hasBadges && (
+              <div class="vip-badges">
+                {badgeDisc  && <span class="vip-badge">{badgeDisc}</span>}
+                {badgeEnea  && <span class="vip-badge">{badgeEnea}</span>}
+                {badgeEgo   && <span class="vip-badge">{badgeEgo}</span>}
+              </div>
+            )}
           </div>
         </div>
-        <a href="/app/analises" class="bg-[#D4AF37] text-black font-bold px-8 py-3 rounded-lg hover:bg-white transition-colors text-sm text-center w-full md:w-auto shrink-0">
+
+        <!-- CTA primário — sempre visível e dominante -->
+        <a href="/app/analises" class="behavioral-cta">
           ACESSAR MINHAS ANÁLISES
         </a>
       </div>
@@ -59,26 +280,30 @@ import AppLayout from '@/layouts/AppLayout.astro';
         <a href="/app/detalhes" class="section-link">Ver todos</a>
       </div>
       <div class="courses-scroll">
-        {([
-          { title: 'Protocolo C-Level: A Arquitetura da Decisão',       img: '/protocolo-clevel-thumb.png' },
-          { title: 'Negociação de Alto Ticket: O Poder do Rapport',      img: '/negociacao-alto-ticket-thumb.png' },
-          { title: 'Escala Exponencial para Software Houses',             img: '/escala-exponencial-thumb.png' },
-          { title: 'Liderança Silenciosa e Influência de Elite',          img: '/lideranca-silenciosa-thumb.png' },
-        ] as { title: string; img: string }[]).map((course) => (
-          <a href="/app/detalhes" class="card card-reveal course-card" style="text-decoration:none;display:block;">
+        {courseList.length > 0 ? courseList.map((course) => (
+          <a href={`/app/detalhes?id=${course.id}`} class="card card-reveal course-card" style="text-decoration:none;display:block;">
             <div class="course-thumb">
-              <img src={course.img} alt={course.title} class="course-thumb__img" loading="lazy" />
+              <img
+                src={course.thumbnail_url ?? '/protocolo-clevel-thumb.png'}
+                alt={course.title}
+                class="course-thumb__img"
+                loading="lazy"
+              />
             </div>
             <div class="course-info">
-              <p class="course-instructor">Mario Quirino</p>
+              <p class="course-instructor">{course.author ?? 'Mario Quirino'}</p>
               <h3 class="course-title">{course.title}</h3>
               <div class="course-footer">
                 <span class="badge-gold">Exclusivo</span>
-                <span class="btn-primary course-cta">Adquirir</span>
+                <span class="btn-primary course-cta">
+                  {course.price_brl ? brl(course.price_brl) : 'Adquirir'}
+                </span>
               </div>
             </div>
           </a>
-        ))}
+        )) : (
+          <p style="color:#4A4A4A;font-size:0.875rem;padding:8px 0">Nenhum curso disponível no momento.</p>
+        )}
       </div>
     </section>
 
@@ -89,21 +314,25 @@ import AppLayout from '@/layouts/AppLayout.astro';
         <a href="/app/detalhes-livro" class="section-link">Ver biblioteca</a>
       </div>
       <div class="books-grid">
-        {([
-          { title: 'A Engenharia do Networking',               img: '/engenharia-networking-cover.png' },
-          { title: 'O Código do Executivo',                    img: '/codigo-executivo-cover.png' },
-          { title: 'Mentalidade Sem Limites',                  img: '/mentalidade-sem-limites-cover.png' },
-          { title: 'Gestão de Crises em Ambientes de Pressão', img: '/gestao-crises-cover.png' },
-        ] as { title: string; img: string }[]).map((book) => (
-          <a href="/app/detalhes-livro" class="card card-reveal book-card" style="text-decoration:none;display:flex;flex-direction:column;">
+        {bookList.length > 0 ? bookList.map((book) => (
+          <a href={`/app/detalhes-livro?id=${book.id}`} class="card card-reveal book-card" style="text-decoration:none;display:flex;flex-direction:column;">
             <div class="book-cover">
-              <img src={book.img} alt={book.title} class="book-cover__img" loading="lazy" />
+              <img
+                src={book.cover_url ?? '/codigo-executivo-cover.png'}
+                alt={book.title}
+                class="book-cover__img"
+                loading="lazy"
+              />
             </div>
-            <p class="book-author">Mario Quirino</p>
+            <p class="book-author">{book.author ?? 'Mario Quirino'}</p>
             <h3 class="book-title">{book.title}</h3>
-            <span class="badge-gold" style="margin:0 12px 12px;">Físico + Digital</span>
+            <span class="badge-gold" style="margin:0 12px 12px;">
+              {book.product_format === 'physical' ? 'Físico + Digital' : 'Digital'}
+            </span>
           </a>
-        ))}
+        )) : (
+          <p style="color:#4A4A4A;font-size:0.875rem;padding:8px 0">Nenhum livro disponível.</p>
+        )}
       </div>
     </section>
 
@@ -114,26 +343,32 @@ import AppLayout from '@/layouts/AppLayout.astro';
         <a href="/app/detalhes-evento" class="section-link">Ver todos</a>
       </div>
       <div class="events-list">
-        {([
-          { day: '15', month: 'AGO', city: 'São Paulo — SP',          name: 'Summit MQ 2026 · São Paulo',              venue: 'Grand Hyatt',  price: 'R$ 4.997', img: '/summit-mq-banner.png' },
-          { day: '22', month: 'OUT', city: 'Balneário Camboriú — SC', name: 'Networking Exclusive · Balneário Camboriú', venue: 'Oca Beach',   price: 'R$ 2.997', img: 'https://images.unsplash.com/photo-1519167758481-83f550bb49b3?q=80&w=800&auto=format&fit=crop' },
-        ] as { day: string; month: string; city: string; name: string; venue: string; price: string; img: string }[]).map((ev) => (
-          <a href="/app/detalhes-evento" class="card card-reveal event-card" style="text-decoration:none;overflow:hidden;">
-            <div class="event-img-col">
-              <img src={ev.img} alt={ev.name} class="event-img" loading="lazy" />
-            </div>
-            <div class="event-date">
-              <p class="event-day">{ev.day}</p>
-              <p class="event-month">{ev.month}</p>
-            </div>
-            <div class="event-info">
-              <p class="event-location">{ev.city}</p>
-              <h3 class="event-name">{ev.name}</h3>
-              <p class="event-price">Ingresso VIP · {ev.price}</p>
-            </div>
-            <span class="btn-primary event-cta">Garantir</span>
-          </a>
-        ))}
+        {eventList.length > 0 ? eventList.map((ev) => {
+          const { day, month } = dateParts(ev.date);
+          return (
+            <a href={`/app/detalhes-evento?id=${ev.id}`} class="card card-reveal event-card" style="text-decoration:none;overflow:hidden;">
+              <div class="event-img-col">
+                <img
+                  src={ev.banner_url ?? '/summit-mq-banner.png'}
+                  alt={ev.title}
+                  class="event-img"
+                  loading="lazy"
+                />
+              </div>
+              <div class="event-date">
+                <p class="event-day">{day}</p>
+                <p class="event-month">{month}</p>
+              </div>
+              <div class="event-info">
+                <p class="event-location">{ev.venue_name ?? '—'}</p>
+                <h3 class="event-name">{ev.title}</h3>
+              </div>
+              <span class="btn-primary event-cta">Garantir</span>
+            </a>
+          );
+        }) : (
+          <p style="color:#4A4A4A;font-size:0.875rem;padding:8px 0">Nenhum evento próximo agendado.</p>
+        )}
       </div>
     </section>
 
@@ -286,4 +521,127 @@ import AppLayout from '@/layouts/AppLayout.astro';
   .event-name { font-family: 'Playfair Display', serif; font-size: 1rem; color: #F5F5F5; line-height: 1.3; margin-bottom: 4px; }
   .event-price { font-size: 0.8125rem; color: #A0A0A0; }
   .event-cta { padding: 8px 16px; font-size: 0.8125rem; white-space: nowrap; }
+
+  /* ── Behavioral Banner ────────────────────────────────────────────────────── */
+  .behavioral-banner {
+    width: 100%;
+    background: linear-gradient(135deg, #0E0E0E 0%, #080808 100%);
+    border: 1px solid rgba(255,255,255,0.07);
+    border-radius: 20px;
+    padding: 24px;
+    display: flex;
+    flex-direction: column;
+    gap: 20px;
+  }
+  @media (min-width: 768px) {
+    .behavioral-banner {
+      flex-direction: row;
+      align-items: center;
+      justify-content: space-between;
+      padding: 28px 32px;
+    }
+  }
+
+  .behavioral-left {
+    display: flex;
+    align-items: flex-start;
+    gap: 16px;
+    flex: 1;
+    min-width: 0;
+  }
+
+  .behavioral-icon {
+    color: #C9A96E;
+    flex-shrink: 0;
+    margin-top: 2px;
+    opacity: 0.85;
+  }
+
+  .behavioral-text { flex: 1; min-width: 0; }
+
+  .behavioral-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.3125rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    margin-bottom: 6px;
+    line-height: 1.2;
+  }
+  @media (min-width: 768px) {
+    .behavioral-title { font-size: 1.5rem; }
+  }
+
+  .behavioral-desc {
+    font-size: 0.875rem;
+    color: #4A4A4A;
+    line-height: 1.5;
+  }
+
+  /* ── VIP Status Badges — Stealth Wealth ──────────────────────────────────── */
+  .vip-badges {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-top: 14px;
+    animation: vip-reveal 400ms cubic-bezier(0.4, 0, 0.2, 1) both;
+    animation-delay: 120ms;
+  }
+
+  @keyframes vip-reveal {
+    from { opacity: 0; transform: translateY(4px); }
+    to   { opacity: 1; transform: translateY(0); }
+  }
+
+  .vip-badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 12px;
+    border-radius: 999px;
+    background: rgba(255,255,255,0.03);
+    border: 1px solid rgba(255,255,255,0.08);
+    backdrop-filter: blur(4px);
+    -webkit-backdrop-filter: blur(4px);
+    font-family: 'Inter', sans-serif;
+    font-size: 0.625rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    text-transform: uppercase;
+    color: rgba(160, 160, 160, 0.7);
+    transition: border-color 250ms ease, color 250ms ease, background 250ms ease;
+    white-space: nowrap;
+    cursor: default;
+  }
+
+  .vip-badge:hover {
+    background: rgba(201,169,110,0.05);
+    border-color: rgba(201,169,110,0.18);
+    color: rgba(201,169,110,0.8);
+  }
+
+  /* ── CTA Primário ─────────────────────────────────────────────────────────── */
+  .behavioral-cta {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 12px 28px;
+    background: #C9A96E;
+    color: #000;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-decoration: none;
+    border-radius: 10px;
+    white-space: nowrap;
+    flex-shrink: 0;
+    transition: background 200ms ease, transform 150ms ease, box-shadow 200ms ease;
+  }
+  .behavioral-cta:hover {
+    background: #E8D5A3;
+    transform: translateY(-1px);
+    box-shadow: 0 8px 24px rgba(201,169,110,0.2);
+  }
+  @media (max-width: 767px) {
+    .behavioral-cta { width: 100%; }
+  }
 </style>

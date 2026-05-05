@@ -1,0 +1,277 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+
+// ── SSR: autenticação e validação de acesso ───────────────────────────────
+const supabase = Astro.locals.supabase;
+const user     = Astro.locals.user;
+
+const productId = Astro.url.searchParams.get('id') ?? '';
+
+console.log('=========================================');
+console.log('📖 [APP/LER] Rota alcançada');
+console.log('📖 [APP/LER] productId:', productId || '⚠ VAZIO');
+console.log('📖 [APP/LER] userId:', user?.id || '⚠ SEM SESSÃO');
+
+// Guard 1 — ID ausente
+if (!productId) {
+  console.error('🚨 [APP/LER] REDIRECT → sem productId na URL');
+  return Astro.redirect('/app/compras');
+}
+
+// ── Busca dados do produto (inclui id para debug) ─────────────────────────
+const { data: product, error: productError } = await supabase
+  .from('products')
+  .select('id, title, pdf_url')
+  .eq('id', productId)
+  .single();
+
+console.log('📖 [APP/LER] productError:', productError?.message ?? 'nenhum');
+console.log('📖 [APP/LER] product.title:', product?.title ?? '(null)');
+console.log('📖 [APP/LER] product.pdf_url:', product?.pdf_url ? '✅ presente' : '❌ AUSENTE');
+
+// Guard 2 — Produto não encontrado
+if (productError || !product) {
+  console.error('🚨 [APP/LER] Produto não encontrado no banco. ID:', productId);
+  console.error('🚨 [APP/LER] Código do erro:', productError?.code, '— detalhe:', productError?.details);
+  return Astro.redirect('/app/compras');
+}
+
+// Guard 3 — pdf_url ausente (não redireciona, exibe mensagem na tela)
+const pdfMissing = !product.pdf_url;
+if (pdfMissing) {
+  console.warn(`⚠️ [APP/LER] Produto '${product.title}' (${productId}) não possui pdf_url cadastrado.`);
+  console.warn('⚠️ [APP/LER] Exibindo tela de "arquivo em processamento" em vez de redirect.');
+}
+
+// Guard 4 — Valida compra aprovada (só bloqueia se usuário está logado)
+let accessDenied = false;
+if (user && !pdfMissing) {
+  const { data: purchase, error: purchaseError } = await supabase
+    .from('purchases')
+    .select('id, payment_status')
+    .eq('user_id', user.id)
+    .eq('product_id', productId)
+    .eq('payment_status', 'approved')
+    .maybeSingle();
+
+  console.log('📖 [APP/LER] purchaseError:', purchaseError?.message ?? 'nenhum');
+  console.log('📖 [APP/LER] purchase encontrada:', purchase ? `id=${purchase.id}` : '❌ NÃO ENCONTRADA');
+
+  if (!purchase) {
+    console.warn(`🚨 [APP/LER] ACESSO NEGADO → usuário ${user.id} não tem compra aprovada para produto ${productId}`);
+    console.warn('🚨 [APP/LER] Possível causa: insert no checkout ainda não foi commitado ou RLS bloqueou a leitura.');
+    accessDenied = true;
+  }
+}
+
+if (accessDenied) {
+  return Astro.redirect('/app/compras');
+}
+
+console.log('📖 [APP/LER] ✅ Acesso liberado — renderizando leitor');
+console.log('=========================================');
+
+const bookTitle = product.title ?? 'Leitura';
+const pdfUrl    = product.pdf_url ?? '';
+---
+
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>{bookTitle} · MQ Access</title>
+  <meta name="robots" content="noindex, nofollow" />
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@700&family=Inter:wght@400;500;600&display=swap" rel="stylesheet" />
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    html, body {
+      height: 100%;
+      background: #000;
+      color: #F5F5F5;
+      font-family: 'Inter', sans-serif;
+      overflow: hidden; /* evita scroll duplo */
+    }
+
+    /* ── Layout raiz: coluna, tela cheia ── */
+    .reader-root {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh; /* dynamic viewport height — correto em mobile */
+      width: 100%;
+      overflow: hidden;
+    }
+
+    /* ── Top Bar minimalista ── */
+    .reader-topbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      height: 52px;
+      padding: 0 20px;
+      background: rgba(10, 10, 10, 0.92);
+      backdrop-filter: blur(12px);
+      -webkit-backdrop-filter: blur(12px);
+      border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+      flex-shrink: 0;
+      gap: 16px;
+    }
+
+    /* Coluna esquerda — botão voltar */
+    .reader-back {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      color: rgba(255, 255, 255, 0.45);
+      font-size: 0.8125rem;
+      font-weight: 500;
+      text-decoration: none;
+      transition: color 200ms ease;
+      white-space: nowrap;
+      flex-shrink: 0;
+    }
+    .reader-back:hover { color: #fff; }
+    .reader-back svg { flex-shrink: 0; }
+
+    /* Título centralizado */
+    .reader-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 0.9375rem;
+      font-weight: 700;
+      color: rgba(255, 255, 255, 0.8);
+      text-align: center;
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
+      flex: 1;
+    }
+
+    /* Espaço espelho do back para centralizar o título */
+    .reader-spacer {
+      flex-shrink: 0;
+      width: 80px; /* aprox. largura do botão voltar */
+    }
+
+    /* ── Área do PDF: ocupa todo o espaço restante ── */
+    .reader-viewport {
+      flex: 1;
+      width: 100%;
+      overflow: hidden;
+      display: flex;
+    }
+
+    .reader-iframe {
+      width: 100%;
+      height: 100%;
+      border: none;
+      display: block;
+    }
+
+    /* ── Fallback: pdf_url ausente ── */
+    .reader-missing {
+      flex: 1;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      gap: 16px;
+      padding: 32px;
+      text-align: center;
+    }
+    .reader-missing-icon {
+      width: 64px; height: 64px;
+      border-radius: 50%;
+      background: rgba(201,169,110,0.07);
+      border: 1px solid rgba(201,169,110,0.2);
+      display: flex; align-items: center; justify-content: center;
+      color: #C9A96E;
+      margin-bottom: 8px;
+    }
+    .reader-missing-title {
+      font-family: 'Playfair Display', serif;
+      font-size: 1.125rem;
+      font-weight: 700;
+      color: #F5F5F5;
+    }
+    .reader-missing-desc {
+      font-size: 0.875rem;
+      color: #4A4A4A;
+      line-height: 1.65;
+      max-width: 340px;
+    }
+    .reader-missing-back {
+      display: inline-flex; align-items: center; gap: 8px;
+      margin-top: 8px;
+      font-size: 0.8125rem; font-weight: 600; letter-spacing: 0.08em;
+      color: #000;
+      background: #C9A96E;
+      border-radius: 8px;
+      padding: 10px 20px;
+      text-decoration: none;
+      transition: background 200ms;
+    }
+    .reader-missing-back:hover { background: #E8D5A3; }
+  </style>
+</head>
+<body>
+  <div class="reader-root">
+
+    <!-- Top Bar -->
+    <header class="reader-topbar">
+      <a href="/app/compras" class="reader-back" data-astro-reload>
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+          <path d="m15 18-6-6 6-6"/>
+        </svg>
+        Voltar
+      </a>
+
+      <h1 class="reader-title">{bookTitle}</h1>
+
+      <!-- Espelho para centralizar o título visualmente -->
+      <div class="reader-spacer" aria-hidden="true"></div>
+    </header>
+
+    <!-- PDF Viewer nativo — zero deps, máxima velocidade -->
+    <div class="reader-viewport">
+      {pdfMissing ? (
+        <!-- Fallback: pdf_url não cadastrado no produto -->
+        <div class="reader-missing">
+          <div class="reader-missing-icon">
+            <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+              <path d="M14 2H6a2 2 0 00-2 2v16a2 2 0 002 2h12a2 2 0 002-2V8z"/>
+              <polyline points="14 2 14 8 20 8"/>
+              <line x1="12" y1="12" x2="12" y2="16"/>
+              <line x1="12" y1="20" x2="12.01" y2="20"/>
+            </svg>
+          </div>
+          <p class="reader-missing-title">Arquivo em Processamento</p>
+          <p class="reader-missing-desc">
+            O arquivo digital de <strong style="color:#A0A0A0">{bookTitle}</strong> está sendo processado e estará disponível em breve.
+            Seu acesso já foi registrado e o livro aparecerá aqui assim que o upload for concluído.
+          </p>
+          <a href="/app/compras" class="reader-missing-back" data-astro-reload>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+            </svg>
+            Voltar para Minhas Compras
+          </a>
+        </div>
+      ) : (
+        <iframe
+          src={pdfUrl}
+          class="reader-iframe"
+          title={`Leitura: ${bookTitle}`}
+          loading="eager"
+          allow="fullscreen"
+        ></iframe>
+      )}
+    </div>
+
+  </div>
+</body>
+</html>

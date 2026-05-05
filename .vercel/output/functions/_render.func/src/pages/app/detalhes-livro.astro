@@ -1,0 +1,572 @@
+---
+import AppLayout from '@/layouts/AppLayout.astro';
+
+const book = {
+  type: 'LIVRO OFICIAL',
+  title: 'A Engenharia do Networking',
+  author: 'Mario Quirino',
+  description: 'O método definitivo para construir relações de alto valor com precisão estratégica. Não se trata de quantidade de contatos — trata-se de arquitetar as conexões certas que multiplicam sua influência e resultados.',
+  price: 'R$ 197',
+  priceNote: 'ou 3x R$ 67 sem juros',
+  stats: [
+    { value: '320', label: 'Páginas' },
+    { value: 'Capa Dura', label: 'Formato' },
+    { value: '1ª Edição', label: 'Exclusividade' },
+  ],
+  chapters: [
+    { num: '01', title: 'O Fator Alfa nas Negociações', desc: 'Como o posicionamento define o resultado antes de qualquer conversa.' },
+    { num: '02', title: 'Mapeamento Rápido de Perfis', desc: 'Técnicas de leitura comportamental aplicadas a reuniões de alto nível.' },
+    { num: '03', title: 'A Arquitetura de Relacionamentos', desc: 'Sistemas para cultivar conexões estratégicas de forma não-transacional.' },
+    { num: '04', title: 'Influência Sem Manipulação', desc: 'Comunicação de autoridade que atrai sem pressionar.' },
+  ],
+  badges: ['Envio para todo o Brasil', 'Embalagem premium', 'Frete expresso disponível'],
+};
+---
+
+<AppLayout title={book.title}>
+  <div class="pdp-page">
+
+    <!-- Botão Voltar -->
+    <a href="/app/home" class="pdp-back">
+      <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+        <path d="M19 12H5M5 12l7-7M5 12l7 7"/>
+      </svg>
+      <span>Voltar</span>
+    </a>
+
+    <div class="pdp-grid">
+
+      <!-- ═══ COLUNA ESQUERDA — A Tangibilidade ═══ -->
+      <div class="pdp-media-col">
+        <div class="pdp-media-wrap">
+
+          <!-- Glow radial de estúdio -->
+          <div class="pdp-glow" aria-hidden="true"></div>
+
+          <!-- Capa do Livro 3D -->
+          <div class="pdp-book-stage">
+            <div class="pdp-book-3d">
+              <!-- Lombada -->
+              <div class="pdp-spine">
+                <span class="pdp-spine-text">Mario Quirino</span>
+              </div>
+              <!-- Capa principal -->
+              <div class="pdp-cover">
+                <!-- Textura de fundo sutil -->
+                <div class="pdp-cover-texture" aria-hidden="true"></div>
+                <!-- Linha decorativa dourada -->
+                <div class="pdp-cover-line" aria-hidden="true"></div>
+                <!-- Conteúdo da capa -->
+                <div class="pdp-cover-content">
+                  <p class="pdp-cover-label">MARIO QUIRINO</p>
+                  <h2 class="pdp-cover-title">A Engenharia<br/>do Networking</h2>
+                  <div class="pdp-cover-badge">EDIÇÃO ESPECIAL</div>
+                </div>
+              </div>
+            </div>
+            <!-- Sombra flutuante -->
+            <div class="pdp-book-shadow" aria-hidden="true"></div>
+          </div>
+
+          <!-- Stats do livro -->
+          <div class="pdp-stats-bar">
+            {book.stats.map(s => (
+              <div class="pdp-stat">
+                <span class="pdp-stat-value">{s.value}</span>
+                <span class="pdp-stat-label">{s.label}</span>
+              </div>
+            ))}
+          </div>
+
+          <!-- Badges de entrega -->
+          <div class="pdp-badges">
+            {book.badges.map(b => (
+              <div class="pdp-badge">
+                <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="20 6 9 17 4 12"/>
+                </svg>
+                <span>{b}</span>
+              </div>
+            ))}
+          </div>
+
+        </div>
+      </div>
+
+      <!-- ═══ COLUNA DIREITA — Buy Box ═══ -->
+      <div class="pdp-buy-col">
+
+        <!-- Tag -->
+        <div class="pdp-tag">{book.type}</div>
+
+        <!-- Título -->
+        <h1 class="pdp-title">{book.title}</h1>
+
+        <!-- Autor -->
+        <p class="pdp-author">por <span>{book.author}</span></p>
+
+        <div class="pdp-sep"></div>
+
+        <!-- Descrição -->
+        <p class="pdp-description">{book.description}</p>
+
+        <!-- Capítulos -->
+        <div class="pdp-content-section">
+          <p class="pdp-section-label">O que você vai descobrir</p>
+          <div class="pdp-chapters">
+            {book.chapters.map(c => (
+              <div class="pdp-chapter-item">
+                <div class="pdp-chapter-header">
+                  <span class="pdp-chapter-num">{c.num}</span>
+                  <p class="pdp-chapter-title">{c.title}</p>
+                  <svg class="pdp-chapter-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+                    <polyline points="20 6 9 17 4 12"/>
+                  </svg>
+                </div>
+                <p class="pdp-chapter-desc">{c.desc}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <!-- Checkout -->
+        <div class="pdp-checkout">
+          <div class="pdp-price-block">
+            <span class="pdp-price-label">Investimento</span>
+            <div class="pdp-price-row">
+              <span class="pdp-price">{book.price}</span>
+            </div>
+            <span class="pdp-price-note">{book.priceNote}</span>
+          </div>
+
+          <a href="/app/checkout" class="pdp-cta" id="pdp-buy-btn">
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/>
+            </svg>
+            <span>GARANTIR MEU EXEMPLAR</span>
+          </a>
+
+          <p class="pdp-security">
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+            </svg>
+            Frete calculado no checkout. Envio expresso disponível.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  </div>
+</AppLayout>
+
+<style>
+  /* ── Página ── */
+  .pdp-page {
+    padding: 24px 16px 48px;
+    max-width: 1200px;
+    margin: 0 auto;
+  }
+
+  /* ── Voltar ── */
+  .pdp-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 500;
+    color: #4A4A4A;
+    text-decoration: none;
+    margin-bottom: 32px;
+    transition: color 200ms ease;
+  }
+  .pdp-back:hover { color: #A0A0A0; }
+
+  /* ── Grid ── */
+  .pdp-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 40px;
+  }
+  @media (min-width: 900px) {
+    .pdp-grid {
+      grid-template-columns: 1fr 1fr;
+      gap: 64px;
+      align-items: start;
+    }
+  }
+
+  /* ══════════════════
+     COLUNA ESQUERDA
+  ══════════════════ */
+  .pdp-media-wrap {
+    position: relative;
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 24px;
+    overflow: hidden;
+    padding: 40px 24px 28px;
+  }
+
+  .pdp-glow {
+    position: absolute;
+    inset: 0;
+    background: radial-gradient(ellipse at 50% 20%, rgba(201,169,110,0.07) 0%, transparent 65%);
+    pointer-events: none;
+    z-index: 0;
+  }
+
+  /* ── Palco do livro 3D ── */
+  .pdp-book-stage {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    padding-bottom: 24px;
+  }
+
+  .pdp-book-3d {
+    display: flex;
+    filter: drop-shadow(0 32px 40px rgba(0,0,0,0.7));
+  }
+
+  /* Lombada */
+  .pdp-spine {
+    width: 28px;
+    background: linear-gradient(180deg, #8C6D3F 0%, #C9A96E 35%, #B8943F 65%, #7A5C2E 100%);
+    border-radius: 3px 0 0 3px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+    flex-shrink: 0;
+  }
+  .pdp-spine::after {
+    content: '';
+    position: absolute;
+    right: 0;
+    top: 0;
+    bottom: 0;
+    width: 3px;
+    background: linear-gradient(90deg, rgba(0,0,0,0.4), transparent);
+  }
+  .pdp-spine-text {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5625rem;
+    font-weight: 600;
+    letter-spacing: 0.1em;
+    color: rgba(0,0,0,0.6);
+    writing-mode: vertical-rl;
+    text-orientation: mixed;
+    transform: rotate(180deg);
+    text-transform: uppercase;
+  }
+
+  /* Capa principal */
+  .pdp-cover {
+    width: 220px;
+    aspect-ratio: 2/3;
+    background: linear-gradient(160deg, #141010 0%, #0d0b09 100%);
+    border: 1px solid rgba(201,169,110,0.1);
+    border-left: none;
+    border-radius: 0 6px 6px 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    align-items: flex-end;
+  }
+
+  /* Textura de fundo sutil */
+  .pdp-cover-texture {
+    position: absolute;
+    inset: 0;
+    background-image:
+      repeating-linear-gradient(
+        0deg,
+        transparent,
+        transparent 3px,
+        rgba(201,169,110,0.012) 3px,
+        rgba(201,169,110,0.012) 4px
+      );
+  }
+
+  /* Linha decorativa */
+  .pdp-cover-line {
+    position: absolute;
+    top: 0;
+    left: 24px;
+    right: 24px;
+    height: 1px;
+    background: linear-gradient(90deg, transparent, rgba(201,169,110,0.3), transparent);
+    top: 28px;
+  }
+
+  .pdp-cover-content {
+    position: relative;
+    z-index: 1;
+    padding: 0 20px 24px;
+    width: 100%;
+  }
+
+  .pdp-cover-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5625rem;
+    font-weight: 700;
+    letter-spacing: 0.15em;
+    color: #C9A96E;
+    margin-bottom: 8px;
+    opacity: 0.8;
+  }
+
+  .pdp-cover-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.1rem;
+    font-weight: 700;
+    color: #F0EDE8;
+    line-height: 1.2;
+    margin-bottom: 14px;
+  }
+
+  .pdp-cover-badge {
+    display: inline-block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.5rem;
+    font-weight: 700;
+    letter-spacing: 0.14em;
+    color: #000;
+    background: linear-gradient(90deg, #C9A96E, #E8D5A3);
+    padding: 3px 8px;
+    border-radius: 2px;
+  }
+
+  /* Sombra flutuante embaixo do livro */
+  .pdp-book-shadow {
+    width: 180px;
+    height: 20px;
+    background: radial-gradient(ellipse, rgba(201,169,110,0.12) 0%, transparent 70%);
+    margin-top: 8px;
+    border-radius: 50%;
+    filter: blur(6px);
+    align-self: center;
+  }
+
+  /* ── Stats ── */
+  .pdp-stats-bar {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    justify-content: space-around;
+    margin-top: 4px;
+    padding-top: 24px;
+    border-top: 1px solid rgba(255,255,255,0.05);
+  }
+  .pdp-stat {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 5px;
+  }
+  .pdp-stat-value {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1;
+  }
+  .pdp-stat-label {
+    font-size: 0.6875rem;
+    color: #4A4A4A;
+    font-family: 'Inter', sans-serif;
+    text-align: center;
+  }
+
+  /* ── Badges de entrega ── */
+  .pdp-badges {
+    position: relative;
+    z-index: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px solid rgba(255,255,255,0.04);
+  }
+  .pdp-badge {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    color: #4A4A4A;
+  }
+  .pdp-badge svg { color: #C9A96E; flex-shrink: 0; }
+
+  /* ══════════════════
+     COLUNA DIREITA
+  ══════════════════ */
+  .pdp-tag {
+    display: inline-block;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 400;
+    letter-spacing: 0.2em;
+    color: #C9A96E;
+    margin-bottom: 16px;
+  }
+
+  .pdp-title {
+    font-family: 'Playfair Display', serif;
+    font-size: clamp(2rem, 4vw, 3rem);
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.1;
+    margin-bottom: 12px;
+  }
+
+  .pdp-author {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    color: #4A4A4A;
+    margin-bottom: 28px;
+  }
+  .pdp-author span { color: #A0A0A0; }
+
+  .pdp-sep {
+    height: 1px;
+    background: rgba(255,255,255,0.05);
+    margin-bottom: 28px;
+  }
+
+  .pdp-description {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 300;
+    color: #6A6A6A;
+    line-height: 1.7;
+    margin-bottom: 36px;
+  }
+
+  /* ── Capítulos ── */
+  .pdp-content-section { margin-bottom: 40px; }
+
+  .pdp-section-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 600;
+    letter-spacing: 0.12em;
+    text-transform: uppercase;
+    color: #4A4A4A;
+    margin-bottom: 16px;
+  }
+
+  .pdp-chapters { display: flex; flex-direction: column; gap: 2px; }
+
+  .pdp-chapter-item {
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.04);
+    border-radius: 8px;
+    padding: 14px 16px;
+    transition: border-color 200ms ease, background 200ms ease;
+  }
+  .pdp-chapter-item:hover {
+    background: #0D0D0D;
+    border-color: rgba(201,169,110,0.12);
+  }
+
+  .pdp-chapter-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+
+  .pdp-chapter-num {
+    font-family: 'Playfair Display', serif;
+    font-size: 0.8125rem;
+    color: #C9A96E;
+    opacity: 0.6;
+    min-width: 20px;
+  }
+
+  .pdp-chapter-title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    font-weight: 500;
+    color: #E0E0E0;
+    flex: 1;
+  }
+
+  .pdp-chapter-icon { color: #C9A96E; opacity: 0.5; flex-shrink: 0; }
+
+  .pdp-chapter-desc {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    color: #4A4A4A;
+    line-height: 1.5;
+    padding-left: 32px;
+  }
+
+  /* ── Checkout ── */
+  .pdp-checkout {
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 16px;
+    padding: 24px;
+  }
+
+  .pdp-price-block { margin-bottom: 20px; }
+  .pdp-price-label {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: #4A4A4A;
+    display: block;
+    margin-bottom: 4px;
+  }
+  .pdp-price-row { display: flex; align-items: baseline; gap: 12px; margin-bottom: 4px; }
+  .pdp-price {
+    font-family: 'Playfair Display', serif;
+    font-size: 2.25rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1;
+  }
+  .pdp-price-note {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.75rem;
+    color: #3A3A3A;
+  }
+
+  .pdp-cta {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 10px;
+    width: 100%;
+    height: 54px;
+    background: #C9A96E;
+    color: #000000;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    font-weight: 700;
+    letter-spacing: 0.12em;
+    border: none;
+    border-radius: 8px;
+    cursor: pointer;
+    transition: background 250ms ease, opacity 250ms ease;
+    margin-bottom: 12px;
+  }
+  .pdp-cta:hover { background: #E8D5A3; }
+  .pdp-cta:active { opacity: 0.85; }
+
+  .pdp-security {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: #2E2E2E;
+    text-align: center;
+  }
+</style>

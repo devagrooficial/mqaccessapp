@@ -1,188 +1,245 @@
 ---
 import BaseLayout from '@/layouts/BaseLayout.astro';
+
+// Captura o código do ingresso gerado no checkout
+const ticketCode = Astro.url.searchParams.get('code') ?? '';
 ---
 
-<BaseLayout title="Vaga Confirmada · Summit MQ">
-<div class="se-shell">
+<BaseLayout title="Lugar Reservado · MQ Access">
+  <div class="sc-shell">
 
-  <!-- Logo -->
-  <div class="se-logo">MQ<span>A</span></div>
-
-  <!-- Ícone de confirmação -->
-  <div class="se-icon" id="se-icon">
-    <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
-      <polyline points="20 6 9 17 4 12"/>
-    </svg>
-  </div>
-
-  <!-- Copy central -->
-  <div class="se-copy" id="se-copy">
-    <p class="se-eyebrow">RESERVA CONFIRMADA</p>
-    <h1 class="se-title">Sua vaga no<br>Summit MQ está garantida.</h1>
-    <p class="se-sub">O ingresso VIP foi gerado e enviado para o seu e-mail. Nos vemos no Grand Hyatt em 15 de Agosto.</p>
-  </div>
-
-  <!-- Detalhes do ingresso -->
-  <div class="se-card" id="se-card">
-    <div class="se-card-row">
-      <div class="se-card-item">
-        <span class="se-card-label">EVENTO</span>
-        <span class="se-card-val">Summit MQ · São Paulo</span>
-      </div>
-      <div class="se-card-item">
-        <span class="se-card-label">DATA</span>
-        <span class="se-card-val">15 AGO 2026</span>
-      </div>
-      <div class="se-card-item">
-        <span class="se-card-label">CATEGORIA</span>
-        <span class="se-card-val se-card-val--gold">Acesso VIP</span>
-      </div>
-      <div class="se-card-item">
-        <span class="se-card-label">LOCAL</span>
-        <span class="se-card-val">Grand Hyatt Hotel</span>
-      </div>
+    <!-- Partículas decorativas -->
+    <div class="sc-particles" aria-hidden="true">
+      <span class="sc-particle sc-particle--1"></span>
+      <span class="sc-particle sc-particle--2"></span>
+      <span class="sc-particle sc-particle--3"></span>
     </div>
-  </div>
 
-  <!-- Ações -->
-  <div class="se-actions" id="se-actions">
-    <a href="/app/ingresso" class="se-btn-primary">VER MEU INGRESSO VIP</a>
-    <a href="/app/compras" class="se-btn-secondary">Ir para Minha Biblioteca</a>
-  </div>
+    <div class="sc-card" id="sc-card">
 
-  <!-- Próximos passos -->
-  <div class="se-steps" id="se-steps">
-    <p class="se-steps-label">PRÓXIMOS PASSOS</p>
-    <div class="se-step">
-      <div class="se-step-num">01</div>
-      <div>
-        <p class="se-step-title">Verifique seu e-mail</p>
-        <p class="se-step-desc">Você receberá o ingresso digital em até 5 minutos no e-mail cadastrado.</p>
+      <!-- Ícone de sucesso -->
+      <div class="sc-icon-wrap">
+        <div class="sc-icon-ring sc-icon-ring--outer"></div>
+        <div class="sc-icon-ring sc-icon-ring--inner"></div>
+        <svg class="sc-icon" width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5">
+          <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z"/>
+          <polyline points="9 12 11 14 15 10" stroke-width="2"/>
+        </svg>
       </div>
-    </div>
-    <div class="se-step">
-      <div class="se-step-num">02</div>
-      <div>
-        <p class="se-step-title">Salve a data</p>
-        <p class="se-step-desc">15 de Agosto de 2026, das 09h às 20h — Grand Hyatt Hotel, São Paulo.</p>
-      </div>
-    </div>
-    <div class="se-step">
-      <div class="se-step-num">03</div>
-      <div>
-        <p class="se-step-title">Prepare-se para a imersão</p>
-        <p class="se-step-desc">Em breve você receberá um guia de preparação exclusivo para participantes VIP.</p>
-      </div>
-    </div>
-  </div>
 
-</div>
+      <!-- Header -->
+      <div class="sc-header">
+        <p class="sc-tag">CONFIRMAÇÃO DE INGRESSO</p>
+        <h1 class="sc-title">Seu Lugar Está<br/>Reservado</h1>
+        <p class="sc-subtitle">Sua cadeira no evento foi confirmada. O ingresso digital já está disponível na sua conta.</p>
+      </div>
+
+      <!-- Detalhes do ingresso -->
+      <div class="sc-receipt">
+        <div class="sc-receipt-item">
+          <span class="sc-receipt-label">Ingresso</span>
+          <span class="sc-receipt-value">Evento Presencial MQ</span>
+        </div>
+        <div class="sc-receipt-item">
+          <span class="sc-receipt-label">Formato</span>
+          <span class="sc-receipt-value">Presencial · Ingresso Digital</span>
+        </div>
+        <div class="sc-receipt-item">
+          <span class="sc-receipt-label">Status</span>
+          <span class="sc-receipt-value sc-receipt-value--gold">● Confirmado</span>
+        </div>
+      </div>
+
+      <!-- QR Code Dinâmico -->
+      <div class="sc-qr-wrap" aria-label="Ingresso digital (QR Code)">
+        {ticketCode ? (
+          <>
+            <img
+              src={`https://api.qrserver.com/v1/create-qr-code/?size=160x160&color=C9A96E&bgcolor=050505&data=${encodeURIComponent(ticketCode)}`}
+              alt={`QR Code do Ingresso ${ticketCode}`}
+              class="sc-qr-img"
+              width="120"
+              height="120"
+              loading="eager"
+            />
+            <p class="sc-qr-code">{ticketCode}</p>
+          </>
+        ) : (
+          <p class="sc-qr-label">INGRESSO DIGITAL</p>
+        )}
+      </div>
+
+      <!-- CTA -->
+      <a href="/app/compras" class="sc-cta">
+        <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5">
+          <path d="M2 9a1 1 0 011-1h1a2 2 0 000-4H3a1 1 0 01-1-1V2a1 1 0 011-1h18a1 1 0 011 1v1a1 1 0 01-1 1h-1a2 2 0 000 4h1a1 1 0 011 1v1a1 1 0 01-1 1H3a1 1 0 01-1-1V9z"/>
+        </svg>
+        IR PARA MINHAS COMPRAS
+      </a>
+
+    </div>
+
+    <!-- Rodapé mínimo -->
+    <p class="sc-footer">MQ ACCESS · Plataforma Exclusiva</p>
+
+  </div>
 </BaseLayout>
 
-<script>
-  import { gsap } from 'gsap';
-  document.addEventListener('astro:page-load', () => {
-    const tl = gsap.timeline({ defaults: { ease: 'power3.out' } });
-    tl.from('#se-icon',    { scale: 0.5, opacity: 0, duration: 0.5 })
-      .from('#se-copy',    { y: 24, opacity: 0, duration: 0.5 }, '-=0.2')
-      .from('#se-card',    { y: 20, opacity: 0, duration: 0.45 }, '-=0.2')
-      .from('#se-actions', { y: 16, opacity: 0, duration: 0.4 }, '-=0.2')
-      .from('#se-steps > *', { y: 16, opacity: 0, stagger: 0.1, duration: 0.4 }, '-=0.15');
-  });
-</script>
-
 <style>
-  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: #000; font-family: 'Inter', sans-serif; color: #E0E0E0; }
-
-  .se-shell {
+  .sc-shell {
     min-height: 100dvh;
-    display: flex; flex-direction: column; align-items: center;
+    background: #000;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     justify-content: center;
-    padding: 48px 20px 80px;
+    padding: 24px 16px;
+    font-family: 'Inter', sans-serif;
+    position: relative;
+    overflow: hidden;
+  }
+
+  /* Partículas douradas flutuantes */
+  .sc-particles { position: absolute; inset: 0; pointer-events: none; }
+  .sc-particle {
+    position: absolute;
+    width: 2px; height: 2px;
+    border-radius: 50%;
+    background: #C9A96E;
+    animation: float-up 6s ease-in-out infinite;
+    opacity: 0;
+  }
+  .sc-particle--1 { left: 20%; animation-delay: 0s; animation-duration: 7s; }
+  .sc-particle--2 { left: 55%; animation-delay: 2s; animation-duration: 9s; }
+  .sc-particle--3 { left: 80%; animation-delay: 4s; animation-duration: 6s; }
+  @keyframes float-up {
+    0%   { transform: translateY(100vh) scale(0); opacity: 0; }
+    10%  { opacity: 0.6; }
+    90%  { opacity: 0.4; }
+    100% { transform: translateY(-10vh) scale(1.5); opacity: 0; }
+  }
+
+  /* Card central */
+  .sc-card {
+    width: 100%;
+    max-width: 440px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
     text-align: center;
-    max-width: 600px; margin: 0 auto;
+    animation: fade-in-up 0.7s ease both;
+  }
+  @keyframes fade-in-up {
+    from { opacity: 0; transform: translateY(20px); }
+    to   { opacity: 1; transform: translateY(0); }
   }
 
-  .se-logo {
-    font-size: .75rem; font-weight: 700; letter-spacing: .14em; color: #F5F5F5;
-    margin-bottom: 36px;
-  }
-  .se-logo span { font-family: 'Playfair Display', serif; color: #C9A96E; }
-
-  /* Check icon */
-  .se-icon {
-    width: 64px; height: 64px; border-radius: 50%;
-    background: rgba(201,169,110,0.1);
-    border: 1px solid rgba(201,169,110,0.3);
+  /* Ícone */
+  .sc-icon-wrap {
+    position: relative;
+    width: 80px; height: 80px;
     display: flex; align-items: center; justify-content: center;
-    color: #C9A96E; margin-bottom: 28px;
+    margin-bottom: 32px;
+  }
+  .sc-icon-ring {
+    position: absolute;
+    border-radius: 50%;
+    border: 1px solid rgba(201,169,110,0.2);
+    animation: pulse-ring 2.5s ease-out infinite;
+  }
+  .sc-icon-ring--outer { width: 80px; height: 80px; animation-delay: 0s; }
+  .sc-icon-ring--inner { width: 60px; height: 60px; animation-delay: 0.4s; }
+  @keyframes pulse-ring {
+    0%   { transform: scale(0.95); opacity: 0.6; }
+    70%  { transform: scale(1.1);  opacity: 0; }
+    100% { transform: scale(0.95); opacity: 0; }
+  }
+  .sc-icon {
+    position: relative; z-index: 1;
+    color: #C9A96E;
+    filter: drop-shadow(0 0 12px rgba(201,169,110,0.3));
   }
 
-  /* Copy */
-  .se-copy { margin-bottom: 28px; }
-  .se-eyebrow {
-    font-size: .575rem; font-weight: 700; letter-spacing: .2em;
+  /* Header */
+  .sc-header { margin-bottom: 28px; }
+  .sc-tag {
+    font-size: .6rem; font-weight: 700; letter-spacing: .2em;
     color: #C9A96E; margin-bottom: 12px;
   }
-  .se-title {
+  .sc-title {
     font-family: 'Playfair Display', serif;
-    font-size: clamp(1.6rem, 4vw, 2.25rem);
-    font-weight: 700; line-height: 1.2; color: #F5F5F5;
-    margin-bottom: 14px;
+    font-size: 2.25rem; font-weight: 700;
+    color: #F5F5F5; margin-bottom: 12px; line-height: 1.1;
   }
-  .se-sub { font-size: .875rem; color: #4A4A4A; line-height: 1.65; max-width: 440px; }
+  .sc-subtitle {
+    font-size: .9rem; font-weight: 300;
+    color: #5A5A5A; line-height: 1.65; max-width: 360px;
+  }
 
-  /* Card */
-  .se-card {
-    width: 100%; background: #0A0A0A;
-    border: 1px solid rgba(255,255,255,0.06);
-    border-radius: 14px; padding: 20px 24px; margin-bottom: 24px;
+  /* Receipt */
+  .sc-receipt {
+    width: 100%;
+    background: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.05);
+    border-radius: 12px;
+    padding: 16px 20px;
+    display: flex; flex-direction: column; gap: 10px;
+    margin-bottom: 28px;
   }
-  .se-card-row {
-    display: grid; grid-template-columns: 1fr 1fr; gap: 16px;
-    text-align: left;
+  .sc-receipt-item {
+    display: flex; justify-content: space-between; align-items: center;
   }
-  .se-card-item { display: flex; flex-direction: column; gap: 4px; }
-  .se-card-label { font-size: .55rem; font-weight: 700; letter-spacing: .14em; color: #2A2A2A; }
-  .se-card-val   { font-size: .8125rem; font-weight: 500; color: #A0A0A0; }
-  .se-card-val--gold { color: #C9A96E; }
+  .sc-receipt-label { font-size: .75rem; color: #3A3A3A; }
+  .sc-receipt-value { font-size: .8125rem; font-weight: 500; color: #A0A0A0; }
+  /* QR Code */
+  .sc-qr-wrap {
+    display: flex; flex-direction: column; align-items: center; gap: 10px;
+    margin: 20px 0;
+    padding: 20px 24px;
+    background: rgba(201,169,110,.04);
+    border: 1px solid rgba(201,169,110,.15);
+    border-radius: 12px;
+    width: 100%;
+  }
+  .sc-qr-img {
+    width: 120px; height: 120px;
+    border-radius: 8px;
+    display: block;
+  }
+  .sc-qr-code {
+    font-family: 'Courier New', Courier, monospace;
+    font-size: .75rem;
+    font-weight: 700;
+    letter-spacing: .1em;
+    color: #C9A96E;
+  }
+  .sc-qr-label {
+    font-size: .6rem; letter-spacing: .15em; color: #C9A96E;
+  }
 
-  /* Actions */
-  .se-actions {
-    display: flex; flex-direction: column; align-items: center; gap: 12px;
-    width: 100%; margin-bottom: 40px;
-  }
-  .se-btn-primary {
-    display: flex; align-items: center; justify-content: center;
-    width: 100%; max-width: 380px; height: 52px;
+  .sc-receipt-value--gold { color: #C9A96E; }
+
+  /* CTA */
+  .sc-cta {
+    display: flex; align-items: center; justify-content: center; gap: 10px;
+    width: 100%; max-width: 360px; height: 54px;
     background: #C9A96E; color: #000;
-    font-family: 'Inter', sans-serif; font-size: .75rem; font-weight: 800;
-    letter-spacing: .14em; text-decoration: none; border-radius: 10px;
-    transition: background 200ms, transform 150ms;
+    font-size: .8125rem; font-weight: 700; letter-spacing: .12em;
+    border-radius: 8px; text-decoration: none;
+    transition: background 250ms;
+    margin-bottom: 16px;
   }
-  .se-btn-primary:hover { background: #E8D5A3; transform: translateY(-1px); }
-  .se-btn-secondary {
-    font-size: .75rem; color: #3A3A3A; text-decoration: none;
-    transition: color 200ms;
-  }
-  .se-btn-secondary:hover { color: #E0E0E0; }
+  .sc-cta:hover { background: #E8D5A3; }
 
-  /* Steps */
-  .se-steps { width: 100%; text-align: left; }
-  .se-steps-label {
-    font-size: .55rem; font-weight: 700; letter-spacing: .18em;
-    color: #2A2A2A; margin-bottom: 16px; text-align: center;
+  .sc-secondary {
+    font-size: .75rem; color: #2E2E2E;
+    text-decoration: none; transition: color 200ms;
   }
-  .se-step {
-    display: flex; gap: 16px; align-items: flex-start;
-    padding: 16px 0;
-    border-top: 1px solid rgba(255,255,255,0.04);
+  .sc-secondary:hover { color: #6A6A6A; }
+
+  .sc-footer {
+    position: absolute; bottom: 24px;
+    font-size: .6rem; letter-spacing: .1em;
+    color: #1A1A1A;
   }
-  .se-step-num {
-    font-size: .625rem; font-weight: 700; color: #C9A96E;
-    letter-spacing: .06em; flex-shrink: 0; padding-top: 2px;
-  }
-  .se-step-title { font-size: .875rem; font-weight: 600; color: #E0E0E0; margin-bottom: 4px; }
-  .se-step-desc  { font-size: .8rem; color: #3A3A3A; line-height: 1.55; }
 </style>

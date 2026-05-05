@@ -1,0 +1,468 @@
+---
+import AppLayout from '../../layouts/AppLayout.astro';
+import { supabase } from '../../lib/supabase';
+
+const user = Astro.locals.user;
+
+if (!user) {
+  return Astro.redirect('/auth/login');
+}
+
+// ── INTERCEPTAÇÃO SSR: Marcar como lida (POST) ────────────────────────────
+if (Astro.request.method === 'POST') {
+  try {
+    const formData = await Astro.request.formData();
+    const notificationId = formData.get('notificationId') as string;
+
+    if (!notificationId) throw new Error('ID da notificação não informado');
+
+    const { error: updateError } = await supabase
+      .from('notifications')
+      .update({ is_read: true })
+      .eq('id', notificationId)
+      .eq('user_id', user.id);
+
+    if (updateError) throw updateError;
+
+    return new Response(JSON.stringify({ success: true }), {
+      status: 200,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  } catch (err: any) {
+    return new Response(JSON.stringify({ error: err.message ?? 'Erro desconhecido' }), {
+      status: 400,
+      headers: { 'Content-Type': 'application/json' },
+    });
+  }
+}
+
+// ── BUSCA NOTIFICAÇÕES ────────────────────────────────────────────────────
+type Notificacao = {
+  id: string;
+  title: string;
+  message: string;
+  is_read: boolean;
+  created_at: string;
+};
+
+let notificacoes: Notificacao[] = [];
+
+const { data, error } = await supabase
+  .from('notifications')
+  .select('id, title, message, is_read, created_at')
+  .eq('user_id', user.id)
+  .order('created_at', { ascending: false });
+
+if (error) {
+  console.error('[MQ] Erro ao buscar notificações:', error.message);
+} else if (data) {
+  notificacoes = data as Notificacao[];
+}
+
+const unreadCount = notificacoes.filter(n => !n.is_read).length;
+
+// ── Helper: tempo relativo ────────────────────────────────────────────────
+function timeAgo(iso: string): string {
+  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
+  if (diff < 60)    return 'Agora mesmo';
+  if (diff < 3600)  return `Há ${Math.floor(diff / 60)} min`;
+  if (diff < 86400) return `Há ${Math.floor(diff / 3600)}h`;
+  if (diff < 604800) return `Há ${Math.floor(diff / 86400)} dia${Math.floor(diff / 86400) > 1 ? 's' : ''}`;
+  return new Intl.DateTimeFormat('pt-BR', { day: '2-digit', month: 'short' }).format(new Date(iso));
+}
+---
+
+<AppLayout title="Notificações">
+  <div class="notif-page">
+
+    <!-- HEADER -->
+    <header class="notif-header">
+      <a href="/app/perfil" class="notif-back-btn" aria-label="Voltar para Perfil">
+        <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="m15 18-6-6 6-6"/></svg>
+      </a>
+      <div>
+        <h1 class="notif-title">Notificações</h1>
+        {unreadCount > 0 && (
+          <p class="notif-subtitle">
+            <span class="notif-subtitle__dot"></span>
+            {unreadCount} não lida{unreadCount !== 1 ? 's' : ''}
+          </p>
+        )}
+      </div>
+    </header>
+
+    <!-- CARD PRINCIPAL -->
+    <div class="notif-card">
+
+      {notificacoes.length === 0 ? (
+
+        <!-- EMPTY STATE -->
+        <div class="notif-empty">
+          <div class="notif-empty__icon">
+            <svg xmlns="http://www.w3.org/2000/svg" width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+              <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+          </div>
+          <h2 class="notif-empty__title">Tudo tranquilo por aqui</h2>
+          <p class="notif-empty__text">
+            Você não possui novas notificações no momento. Avisaremos quando houver novidades.
+          </p>
+        </div>
+
+      ) : (
+
+        <!-- LISTA -->
+        <ul class="notif-list">
+          {notificacoes.map((notif) => (
+            <li
+              class={`notif-item ${notif.is_read ? 'notif-item--read' : 'notif-item--unread'}`}
+              id={`notif-${notif.id}`}
+            >
+              <!-- Dot de não lida -->
+              {!notif.is_read && (
+                <span class="notif-item__dot" aria-hidden="true"></span>
+              )}
+
+              <!-- Ícone sino -->
+              <div class={`notif-item__icon ${notif.is_read ? 'notif-item__icon--read' : 'notif-item__icon--unread'}`}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/>
+                  <path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+                </svg>
+              </div>
+
+              <!-- Corpo -->
+              <div class="notif-item__body">
+                <div class="notif-item__top">
+                  <h3 class={`notif-item__title ${notif.is_read ? 'notif-item__title--read' : ''}`}>
+                    {notif.title}
+                  </h3>
+                  <time class="notif-item__time">{timeAgo(notif.created_at)}</time>
+                </div>
+                <p class="notif-item__message">{notif.message}</p>
+
+                {!notif.is_read && (
+                  <button
+                    class="btn-marcar-lido"
+                    data-id={notif.id}
+                    type="button"
+                    aria-label="Marcar como lida"
+                  >
+                    <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                    Marcar como lida
+                  </button>
+                )}
+              </div>
+            </li>
+          ))}
+        </ul>
+
+      )}
+
+    </div>
+  </div>
+</AppLayout>
+
+<script>
+  function initNotifications() {
+    document.querySelectorAll<HTMLButtonElement>('.btn-marcar-lido').forEach(btn => {
+      // Clona para limpar listeners residuais de View Transitions
+      const fresh = btn.cloneNode(true) as HTMLButtonElement;
+      btn.replaceWith(fresh);
+
+      fresh.addEventListener('click', async () => {
+        const notifId = fresh.getAttribute('data-id');
+        const listItem = document.getElementById(`notif-${notifId}`);
+
+        fresh.disabled = true;
+        fresh.textContent = 'Marcando...';
+
+        try {
+          const formData = new FormData();
+          formData.append('notificationId', notifId ?? '');
+
+          const response = await fetch(window.location.pathname, {
+            method: 'POST',
+            body: formData,
+          });
+
+          if (!response.ok) {
+            const json = await response.json();
+            throw new Error(json.error || 'Falha ao atualizar');
+          }
+
+          // Atualiza o visual do card sem reload
+          if (listItem) {
+            listItem.classList.remove('notif-item--unread');
+            listItem.classList.add('notif-item--read');
+
+            // Remove dot
+            listItem.querySelector('.notif-item__dot')?.remove();
+
+            // Atualiza ícone
+            const icon = listItem.querySelector('.notif-item__icon');
+            icon?.classList.remove('notif-item__icon--unread');
+            icon?.classList.add('notif-item__icon--read');
+
+            // Atualiza título
+            listItem.querySelector('.notif-item__title')
+              ?.classList.add('notif-item__title--read');
+
+            // Remove botão com fade
+            fresh.style.transition = 'opacity 200ms ease';
+            fresh.style.opacity = '0';
+            setTimeout(() => fresh.remove(), 220);
+          }
+
+        } catch (err: any) {
+          console.error('[MQ] Erro ao marcar notificação:', err?.message ?? err);
+          fresh.disabled = false;
+          fresh.textContent = 'Tentar novamente';
+        }
+      });
+    });
+  }
+
+  initNotifications();
+  document.addEventListener('astro:page-load', initNotifications);
+</script>
+
+<style>
+  /* ── Container ── */
+  .notif-page {
+    padding: 24px 16px 48px;
+    max-width: 640px;
+    margin: 0 auto;
+  }
+
+  /* ── Header ── */
+  .notif-header {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    margin-bottom: 28px;
+  }
+
+  .notif-back-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 40px;
+    height: 40px;
+    border-radius: 50%;
+    background-color: rgba(255,255,255,0.05);
+    border: 1px solid rgba(255,255,255,0.06);
+    color: rgba(255,255,255,0.5);
+    transition: background-color 200ms ease, color 200ms ease;
+    flex-shrink: 0;
+  }
+  .notif-back-btn:hover {
+    background-color: rgba(255,255,255,0.1);
+    color: #ffffff;
+  }
+
+  .notif-title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.75rem;
+    font-weight: 700;
+    color: #F5F5F5;
+    line-height: 1.2;
+  }
+
+  .notif-subtitle {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.8125rem;
+    color: rgba(255,255,255,0.3);
+    margin-top: 4px;
+  }
+
+  .notif-subtitle__dot {
+    display: inline-block;
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background-color: #D4AF37;
+    box-shadow: 0 0 6px rgba(212,175,55,0.6);
+    flex-shrink: 0;
+  }
+
+  /* ── Card ── */
+  .notif-card {
+    background-color: #0A0A0A;
+    border: 1px solid rgba(255,255,255,0.06);
+    border-radius: 20px;
+    overflow: hidden;
+    min-height: 320px;
+  }
+
+  /* ── Empty State ── */
+  .notif-empty {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    text-align: center;
+    padding: 56px 24px;
+    gap: 12px;
+  }
+
+  .notif-empty__icon {
+    color: rgba(255,255,255,0.1);
+    margin-bottom: 8px;
+  }
+
+  .notif-empty__title {
+    font-family: 'Playfair Display', serif;
+    font-size: 1.25rem;
+    font-weight: 700;
+    color: rgba(255,255,255,0.4);
+  }
+
+  .notif-empty__text {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.3);
+    line-height: 1.65;
+    max-width: 300px;
+  }
+
+  /* ── Lista ── */
+  .notif-list {
+    list-style: none;
+    display: flex;
+    flex-direction: column;
+  }
+
+  /* ── Item base ── */
+  .notif-item {
+    position: relative;
+    display: flex;
+    align-items: flex-start;
+    gap: 14px;
+    padding: 20px 24px;
+    border-bottom: 1px solid rgba(255,255,255,0.04);
+    transition: background-color 200ms ease, opacity 300ms ease;
+  }
+  .notif-item:last-child { border-bottom: none; }
+
+  /* Não lida: fundo dourado sutil + borda esquerda */
+  .notif-item--unread {
+    background-color: rgba(212,175,55,0.03);
+    border-left: 2px solid rgba(212,175,55,0.3);
+    padding-left: 22px;
+  }
+  .notif-item--unread:hover { background-color: rgba(212,175,55,0.05); }
+
+  /* Lida: transparente */
+  .notif-item--read {
+    background-color: transparent;
+    opacity: 0.65;
+  }
+  .notif-item--read:hover { opacity: 0.85; }
+
+  /* Dot de não lida */
+  .notif-item__dot {
+    position: absolute;
+    top: 22px;
+    right: 18px;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #D4AF37;
+    box-shadow: 0 0 8px rgba(212,175,55,0.7);
+  }
+
+  /* Ícone sino */
+  .notif-item__icon {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    flex-shrink: 0;
+  }
+
+  .notif-item__icon--unread {
+    background-color: rgba(212,175,55,0.1);
+    color: #D4AF37;
+  }
+
+  .notif-item__icon--read {
+    background-color: rgba(255,255,255,0.04);
+    color: rgba(255,255,255,0.25);
+  }
+
+  /* Corpo */
+  .notif-item__body {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    padding-right: 16px; /* espaço para o dot */
+    min-width: 0;
+  }
+
+  .notif-item__top {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 10px;
+  }
+
+  .notif-item__title {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.9375rem;
+    font-weight: 600;
+    color: rgba(255,255,255,0.9);
+    line-height: 1.35;
+  }
+
+  .notif-item__title--read {
+    font-weight: 400;
+    color: rgba(255,255,255,0.5);
+  }
+
+  .notif-item__time {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    color: rgba(255,255,255,0.25);
+    white-space: nowrap;
+    flex-shrink: 0;
+    margin-top: 2px;
+  }
+
+  .notif-item__message {
+    font-family: 'Inter', sans-serif;
+    font-size: 0.875rem;
+    color: rgba(255,255,255,0.45);
+    line-height: 1.65;
+  }
+
+  /* Botão Marcar como lida */
+  .btn-marcar-lido {
+    display: inline-flex;
+    align-items: center;
+    gap: 5px;
+    margin-top: 6px;
+    font-family: 'Inter', sans-serif;
+    font-size: 0.6875rem;
+    font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #D4AF37;
+    background: none;
+    border: none;
+    padding: 0;
+    cursor: pointer;
+    transition: color 200ms ease;
+  }
+  .btn-marcar-lido:hover { color: #ffffff; }
+  .btn-marcar-lido:disabled {
+    color: rgba(255,255,255,0.3);
+    cursor: not-allowed;
+  }
+</style>
