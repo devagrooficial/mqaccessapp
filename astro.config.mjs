@@ -5,7 +5,7 @@ import node from '@astrojs/node';
 export default defineConfig({
   site: 'https://mqaccessapp.onrender.com',
   security: {
-    checkOrigin: false,
+    checkOrigin: true,
   },
   output: 'server',
   adapter: node({
