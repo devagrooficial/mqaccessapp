@@ -1,113 +1,127 @@
 ---
 import AppLayout from '@/layouts/AppLayout.astro';
+import { createServerClient } from '@supabase/ssr';
 
-const supabase = Astro.locals.supabase;
-const user     = Astro.locals.user;
+// ── 1. Cliente SSR isolado por request — zero context leak em Node.js ─────────
+//    Cada request constrói seu próprio cliente lendo os cookies DESTA requisição.
+//    Isso elimina o vazamento de estado entre requests concorrentes no Render/Node.
+const supabase = createServerClient(
+  import.meta.env.PUBLIC_SUPABASE_URL,
+  import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
+  {
+    cookies: {
+      getAll: () => Astro.cookies.getAll().map(({ name, value }) => ({ name, value })),
+      setAll: (toSet) => toSet.forEach(({ name, value, options }) => Astro.cookies.set(name, value, options)),
+    },
+  }
+);
 
-// ── Guarda crítica: nunca renderiza sem sessão válida ─────────────────────────
+// ── 2. Sessão validada a partir dos cookies do request atual ──────────────────
+const { data: { user } } = await supabase.auth.getUser();
+
 if (!user) {
   return Astro.redirect('/auth/login');
 }
 
-// ── Busca o último assessment do usuário + contagem de respostas ─────────────
-let egoStatus: 'done' | 'pending' = 'pending';
-let egoHref   = '/app/pergunta';
-let egoAction = 'Iniciar mapeamento →';
-let egoAssessmentId: string | null = null;
-
-{
-  const { data: lastAssessment } = await supabase
-    .from('egogram_assessments')
-    .select('id')
-    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (lastAssessment?.id) {
-    egoAssessmentId = lastAssessment.id;
-
-    // Conta respostas — filtro duplo: assessment_id + user_id via join
-    const { count } = await supabase
-      .from('egogram_answers')
-      .select('id, egogram_assessments!inner(user_id)', { count: 'exact', head: true })
-      .eq('assessment_id', lastAssessment.id)
-      .eq('egogram_assessments.user_id', user.id); // 🔒 Dupla proteção
-
-    if ((count ?? 0) >= 50) {
-      egoStatus = 'done';
-      egoHref   = `/app/relatorio?id=${lastAssessment.id}`;
-      egoAction = 'Ver resultado →';
-    } else {
-      egoHref   = '/app/pergunta';
-      egoAction = 'Continuar mapeamento →';
-    }
-  }
+// ── Helpers de tipo ───────────────────────────────────────────────────────────
+type AssessmentStatus = 'done' | 'in_progress' | 'not_started';
+interface CardState {
+  status: AssessmentStatus;
+  href:   string;
+  action: string;
+  badgeLabel: string;
 }
 
-// ── Status do Eneagrama ────────────────────────────────────────────────────────
-let enneStatus: 'done' | 'pending' = 'pending';
-let enneHref   = '/app/eneagrama/pergunta';
-let enneAction = 'Iniciar mapeamento →';
+/**
+ * Resolve o status real do card aplicando prioridade A → B → C:
+ *   A) Existe sessão COMPLETA (>= maxAnswers respostas)?  → done
+ *   B) Existe sessão com > 0 respostas?                   → in_progress
+ *   C) Nenhuma sessão ou todas vazias                     → not_started
+ *
+ * Isso ignora "ghost rows" (sessões criadas mas jamais respondidas)
+ * que enganavam a query .limit(1) anterior.
+ */
+async function resolveAssessmentStatus(opts: {
+  assessmentTable: string;
+  answersTable:    string;
+  maxAnswers:      number;
+  reportPath:      string;
+  questionPath:    string;
+}): Promise<CardState> {
+  const { assessmentTable, answersTable, maxAnswers, reportPath, questionPath } = opts;
 
-{
-  const { data: lastEnne } = await supabase
-    .from('enneagram_assessments')
+  // Busca TODAS as sessões do usuário (ordenadas da mais recente para a mais antiga)
+  const { data: sessions } = await supabase
+    .from(assessmentTable)
     .select('id')
-    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
+    .eq('user_id', user!.id)   // 🔒 anti-leak: sempre filtra pelo user logado
+    .order('created_at', { ascending: false });
 
-  if (lastEnne?.id) {
-    const { count: enneCount } = await supabase
-      .from('enneagram_answers')
-      .select('id, enneagram_assessments!inner(user_id)', { count: 'exact', head: true })
-      .eq('assessment_id', lastEnne.id)
-      .eq('enneagram_assessments.user_id', user.id); // 🔒 Dupla proteção
-
-    if ((enneCount ?? 0) >= 45) {
-      enneStatus = 'done';
-      enneHref   = `/app/eneagrama/relatorio?id=${lastEnne.id}`;
-      enneAction = 'Ver resultado →';
-    } else {
-      enneHref   = '/app/eneagrama/pergunta';
-      enneAction = 'Continuar mapeamento →';
-    }
+  if (!sessions || sessions.length === 0) {
+    return { status: 'not_started', href: questionPath, action: 'Iniciar mapeamento →', badgeLabel: 'PENDENTE' };
   }
+
+  // Para cada sessão, busca a contagem de respostas em paralelo
+  const counts = await Promise.all(
+    sessions.map(async (s) => {
+      const { count } = await supabase
+        .from(answersTable)
+        .select('id', { count: 'exact', head: true })
+        .eq('assessment_id', s.id);
+      return { id: s.id, count: count ?? 0 };
+    })
+  );
+
+  // A) Prioridade máxima: sessão COMPLETA (>= maxAnswers) — ignora ghost rows
+  const completedSession = counts.find(c => c.count >= maxAnswers);
+  if (completedSession) {
+    return {
+      status: 'done',
+      href:   `${reportPath}?id=${completedSession.id}`,
+      action: 'Ver resultado →',
+      badgeLabel: 'CONCLUÍDO',
+    };
+  }
+
+  // B) Sessão iniciada mas incompleta (> 0 respostas)
+  const inProgressSession = counts.find(c => c.count > 0);
+  if (inProgressSession) {
+    return {
+      status: 'in_progress',
+      href:   questionPath,
+      action: 'Continuar mapeamento →',
+      badgeLabel: 'PENDENTE',
+    };
+  }
+
+  // C) Só ghost rows (0 respostas em todas as sessões) ou nenhuma sessão
+  return { status: 'not_started', href: questionPath, action: 'Iniciar mapeamento →', badgeLabel: 'PENDENTE' };
 }
 
-// ── Status do DISC ───────────────────────────────────────────────────
-let discStatus: 'done' | 'pending' = 'pending';
-let discHref   = '/app/disc/pergunta';
-let discAction = 'Iniciar mapeamento →';
-
-{
-  const { data: lastDisc } = await supabase
-    .from('disc_assessments')
-    .select('id')
-    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
-    .order('created_at', { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  if (lastDisc?.id) {
-    const { count: discCount } = await supabase
-      .from('disc_answers')
-      .select('id, disc_assessments!inner(user_id)', { count: 'exact', head: true })
-      .eq('assessment_id', lastDisc.id)
-      .eq('disc_assessments.user_id', user.id); // 🔒 Dupla proteção
-
-    if ((discCount ?? 0) >= 30) {
-      discStatus = 'done';
-      discHref   = `/app/disc/relatorio?id=${lastDisc.id}`;
-      discAction = 'Ver resultado →';
-    } else {
-      discHref   = '/app/disc/pergunta';
-      discAction = 'Continuar mapeamento →';
-    }
-  }
-}
+// ── 3. Resolve os 3 testes em paralelo ───────────────────────────────────────
+const [egoCard, enneCard, discCard] = await Promise.all([
+  resolveAssessmentStatus({
+    assessmentTable: 'egogram_assessments',
+    answersTable:    'egogram_answers',
+    maxAnswers:      50,
+    reportPath:      '/app/relatorio',
+    questionPath:    '/app/pergunta',
+  }),
+  resolveAssessmentStatus({
+    assessmentTable: 'enneagram_assessments',
+    answersTable:    'enneagram_answers',
+    maxAnswers:      45,
+    reportPath:      '/app/eneagrama/relatorio',
+    questionPath:    '/app/eneagrama/pergunta',
+  }),
+  resolveAssessmentStatus({
+    assessmentTable: 'disc_assessments',
+    answersTable:    'disc_answers',
+    maxAnswers:      30,
+    reportPath:      '/app/disc/relatorio',
+    questionPath:    '/app/disc/pergunta',
+  }),
+]);
 ---
 
 <AppLayout title="Central de Análises" activeNav="analises">
@@ -125,13 +139,12 @@ let discAction = 'Iniciar mapeamento →';
     <!-- Grid -->
     <div class="analises-grid">
       <!-- Egograma — status dinâmico -->
-      <a href={egoHref} class="analise-card">
+      <a href={egoCard.href} class="analise-card">
         <div class="analise-card__header">
           <h2 class="analise-card__title">Egograma</h2>
-          {egoStatus === 'done'
-            ? <span class="status-badge status-badge--done">CONCLUÍDO</span>
-            : <span class="status-badge status-badge--pending">PENDENTE</span>
-          }
+          <span class={`status-badge ${egoCard.status === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
+            {egoCard.badgeLabel}
+          </span>
         </div>
         <p class="analise-card__desc">Mapeie seus estados de ego e entenda como você reage a conflitos internos e externos.</p>
         <div class="analise-card__footer">
@@ -139,16 +152,16 @@ let discAction = 'Iniciar mapeamento →';
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             15 min
           </div>
-          <span class="analise-action">{egoAction}</span>
+          <span class="analise-action">{egoCard.action}</span>
         </div>
       </a>
 
       <!-- Eneagrama -->
-      <a href={enneHref} class="analise-card">
+      <a href={enneCard.href} class="analise-card">
         <div class="analise-card__header">
           <h2 class="analise-card__title">Eneagrama</h2>
-          <span class={`status-badge ${enneStatus === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
-            {enneStatus === 'done' ? 'CONCLUÍDO' : 'PENDENTE'}
+          <span class={`status-badge ${enneCard.status === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
+            {enneCard.badgeLabel}
           </span>
         </div>
         <p class="analise-card__desc">Descubra seu tipo de personalidade principal e seus padrões de motivação profunda.</p>
@@ -157,16 +170,16 @@ let discAction = 'Iniciar mapeamento →';
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             25 min
           </div>
-          <span class="analise-action">{enneAction}</span>
+          <span class="analise-action">{enneCard.action}</span>
         </div>
       </a>
 
       <!-- DISC -->
-      <a href={discHref} class="analise-card">
+      <a href={discCard.href} class="analise-card">
         <div class="analise-card__header">
           <h2 class="analise-card__title">DISC</h2>
-          <span class={`status-badge ${discStatus === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
-            {discStatus === 'done' ? 'CONCLUÍDO' : 'PENDENTE'}
+          <span class={`status-badge ${discCard.status === 'done' ? 'status-badge--done' : 'status-badge--pending'}`}>
+            {discCard.badgeLabel}
           </span>
         </div>
         <p class="analise-card__desc">Identifique seu perfil comportamental predominante: Dominante, Influente, Estável ou Criterioso.</p>
@@ -175,7 +188,7 @@ let discAction = 'Iniciar mapeamento →';
             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
             15 min
           </div>
-          <span class="analise-action">{discAction}</span>
+          <span class="analise-action">{discCard.action}</span>
         </div>
       </a>
     </div>
