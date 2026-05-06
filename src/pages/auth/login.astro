@@ -1,59 +1,13 @@
 ---
 import AuthLayout from '@/layouts/AuthLayout.astro';
-import { createServerClient } from '@supabase/ssr';
 
-let errorMessage = '';
 const registered      = Astro.url.searchParams.get('registered') === '1';
 const passwordUpdated = Astro.url.searchParams.get('password_updated') === '1';
 
-// URL de destino pós-login (passada pelo middleware via ?next=)
+// URL de destino pós-login — passada pelo middleware via ?next=
+// Serializada no HTML via data-attribute para o script client-side ler
 const nextUrl = Astro.url.searchParams.get('next') ?? '/app/home';
-
-if (Astro.request.method === 'POST') {
-  const formData = await Astro.request.formData();
-  const email    = formData.get('email')?.toString().trim() ?? '';
-  const password = formData.get('password')?.toString() ?? '';
-
-  // CRÍTICO: Usar createServerClient aqui para que o @supabase/ssr grave os cookies
-  // no formato correto (sb-<project-ref>-auth-token) que o middleware sabe ler.
-  // O createClient puro do supabase-js usa localStorage — invisível para o servidor.
-  const supabase = createServerClient(
-    import.meta.env.PUBLIC_SUPABASE_URL,
-    import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
-    {
-      cookies: {
-        getAll() {
-          const cookieHeader = Astro.request.headers.get('cookie') || '';
-          return cookieHeader
-            .split(';')
-            .map((c) => c.trim())
-            .filter(Boolean)
-            .map((c) => {
-              const [name, ...rest] = c.split('=');
-              return { name: name.trim(), value: rest.join('=') };
-            });
-        },
-        setAll(cookiesToSet) {
-          cookiesToSet.forEach(({ name, value, options }) =>
-            Astro.cookies.set(name, value, { ...options, path: options?.path || '/' })
-          );
-        },
-      },
-    }
-  );
-
-  const { data, error } = await supabase.auth.signInWithPassword({ email, password });
-
-  if (error || !data.session) {
-    errorMessage = (error?.message === 'Invalid login credentials')
-      ? 'E-mail ou senha incorretos. Verifique seus dados.'
-      : (error?.message ?? 'Erro ao autenticar. Tente novamente.');
-  } else {
-    // O createServerClient já gravou os cookies de sessão via setAll acima.
-    // Redireciona para a URL de destino (ou home)
-    return Astro.redirect(nextUrl.startsWith('/app') ? nextUrl : '/app/home');
-  }
-}
+const safeNext = nextUrl.startsWith('/app') ? nextUrl : '/app/home';
 ---
 
 <AuthLayout title="Entrar">
@@ -77,7 +31,8 @@ if (Astro.request.method === 'POST') {
       </div>
     )}
 
-    <form class="auth-form" id="login-form" action="/auth/login" method="POST" novalidate data-astro-reload>
+    <!-- data-next: passa a URL de destino do SSR para o script JS -->
+    <form class="auth-form" id="login-form" novalidate data-next={safeNext}>
       <div class="form-group">
         <label class="form-label" for="email">E-mail</label>
         <input
@@ -105,9 +60,8 @@ if (Astro.request.method === 'POST') {
         <a href="/auth/esqueceu-senha" class="form-link-right">Esqueceu a senha?</a>
       </div>
 
-      {errorMessage && (
-        <p class="auth-error" role="alert">{errorMessage}</p>
-      )}
+      <!-- Erro dinâmico injetado pelo JS -->
+      <p id="login-error" class="auth-error" role="alert" style="display:none;"></p>
 
       <button type="submit" class="btn-primary btn-full" id="login-submit">
         Entrar
@@ -122,10 +76,60 @@ if (Astro.request.method === 'POST') {
 </AuthLayout>
 
 <script>
-  document.getElementById('login-form')?.addEventListener('submit', () => {
-    const btn = document.getElementById('login-submit') as HTMLButtonElement;
-    if (btn) { btn.textContent = 'Autenticando…'; btn.disabled = true; }
-  });
+  import { createClient } from '@supabase/supabase-js';
+
+  // Instancia o cliente Supabase direto no browser — bypass total do SSR/proxy
+  const supabase = createClient(
+    import.meta.env.PUBLIC_SUPABASE_URL,
+    import.meta.env.PUBLIC_SUPABASE_ANON_KEY
+  );
+
+  function initLoginForm() {
+    const form      = document.getElementById('login-form') as HTMLFormElement | null;
+    const btnSubmit = document.getElementById('login-submit') as HTMLButtonElement | null;
+    const errorEl   = document.getElementById('login-error') as HTMLParagraphElement | null;
+
+    if (!form) return;
+
+    form.addEventListener('submit', async (e) => {
+      e.preventDefault(); // Impede qualquer submissão nativa — sem HTTP POST, sem proxy, sem CSRF
+
+      const email    = (document.getElementById('email') as HTMLInputElement)?.value.trim() ?? '';
+      const password = (document.getElementById('password') as HTMLInputElement)?.value ?? '';
+
+      // Limpa erro anterior
+      if (errorEl) { errorEl.style.display = 'none'; errorEl.textContent = ''; }
+
+      // Validação mínima client-side
+      if (!email || !password) {
+        if (errorEl) { errorEl.textContent = 'Preencha e-mail e senha.'; errorEl.style.display = 'block'; }
+        return;
+      }
+
+      // Loading state
+      if (btnSubmit) { btnSubmit.textContent = 'Autenticando…'; btnSubmit.disabled = true; }
+
+      // Chama o Supabase DIRETO do navegador — nenhum dado passa pelo servidor Node
+      const { data, error } = await supabase.auth.signInWithPassword({ email, password });
+
+      if (error || !data.session) {
+        const msg = error?.message === 'Invalid login credentials'
+          ? 'E-mail ou senha incorretos. Verifique seus dados.'
+          : (error?.message ?? 'Erro ao autenticar. Tente novamente.');
+
+        if (errorEl) { errorEl.textContent = msg; errorEl.style.display = 'block'; }
+        if (btnSubmit) { btnSubmit.textContent = 'Entrar'; btnSubmit.disabled = false; }
+        return;
+      }
+
+      // Sucesso — redireciona para a URL de destino salva no data-next
+      const nextUrl = form.dataset.next ?? '/app/home';
+      window.location.href = nextUrl;
+    });
+  }
+
+  initLoginForm();
+  document.addEventListener('astro:page-load', initLoginForm);
 </script>
 
 <style>
