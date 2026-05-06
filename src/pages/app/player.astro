@@ -132,18 +132,27 @@ if (activeLesson?.id) {
   }
 }
 
-// LOGS DE RASTREIO NO TERMINAL (remover após debug)
-console.log('--- DEBUG GSD: DOWNLOADS ---');
-console.log('activeLesson.id :', activeLesson?.id ?? 'NULO');
-console.log('lessonFiles.length:', lessonFiles.length);
-console.log('lessonFiles dados :', JSON.stringify(lessonFiles, null, 2));
-console.log('----------------------------');
-
 // ── Helpers ───────────────────────────────────────────────────────────────
 const fmtDur = (secs: number) => {
   const m = Math.floor(secs / 60).toString().padStart(2, '0');
   const s = (secs % 60).toString().padStart(2, '0');
   return `${m}:${s}`;
+};
+
+/**
+ * Converte QUALQUER formato de URL do YouTube para o formato /embed/.
+ * Suporta: watch?v=, youtu.be/, /shorts/, /live/, /v/, /embed/ (já correto).
+ * Adiciona rel=0 para evitar vídeos sugeridos de outros canais no final.
+ * Retorna a URL original intacta se não for do YouTube.
+ */
+const getYouTubeEmbedUrl = (url: string | null | undefined): string => {
+  if (!url) return '';
+  const regExp = /^.*(youtu\.be\/|v\/|u\/\w\/|embed\/|shorts\/|live\/|watch\?v=|&v=)([^#&?]{11}).*/;
+  const match  = url.match(regExp);
+  if (match && match[2]?.length === 11) {
+    return `https://www.youtube.com/embed/${match[2]}?rel=0&modestbranding=1`;
+  }
+  return url; // URL não-YouTube retorna intacta (Vimeo, Panda, etc.)
 };
 
 const formatBytes = (bytes: number) => {
@@ -186,12 +195,12 @@ const hasCurriculum = sortedModules.length > 0;
           <div class="pl-video-screen">
 
             {activeLesson?.video_url ? (
-              /* Se for link de iframe (Vimeo/Panda/YouTube embed), renderiza iframe */
+              /* Renderiza iframe — URL é normalizada para /embed/ pelo parser SSR */
               activeLesson.video_url.startsWith('http') ? (
                 <iframe
-                  src={activeLesson.video_url}
+                  src={getYouTubeEmbedUrl(activeLesson.video_url)}
                   class="pl-video-iframe"
-                  allow="autoplay; fullscreen"
+                  allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture; fullscreen"
                   allowfullscreen
                   title={activeLesson.title}
                 />
