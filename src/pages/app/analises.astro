@@ -2,44 +2,52 @@
 import AppLayout from '@/layouts/AppLayout.astro';
 import { createServerClient } from '@supabase/ssr';
 
-// ── 1. Cliente SSR isolado por request — zero context leak em Node.js ─────────
-//    Cada request constrói seu próprio cliente lendo os cookies DESTA requisição.
-//    Isso elimina o vazamento de estado entre requests concorrentes no Render/Node.
+// ── 1. Cliente SSR blindado por request — interface get/set/remove ─────────────
+//    Usa a API de cookie individual (compatível com todos os adapters Astro/Render).
+//    Cada request constrói seu próprio client — zero context leak em Node.js.
 const supabase = createServerClient(
   import.meta.env.PUBLIC_SUPABASE_URL,
   import.meta.env.PUBLIC_SUPABASE_ANON_KEY,
   {
     cookies: {
-      getAll: () => Astro.cookies.getAll().map(({ name, value }) => ({ name, value })),
-      setAll: (toSet) => toSet.forEach(({ name, value, options }) => Astro.cookies.set(name, value, options)),
+      get(key: string)                         { return Astro.cookies.get(key)?.value; },
+      set(key: string, value: string, options) { Astro.cookies.set(key, value, options); },
+      remove(key: string, options)             { Astro.cookies.delete(key, options); },
     },
   }
 );
 
-// ── 2. Sessão validada a partir dos cookies do request atual ──────────────────
-const { data: { user } } = await supabase.auth.getUser();
+// ── 2. Validação de sessão — guarda contra authError E user nulo ───────────────
+const { data: { user }, error: authError } = await supabase.auth.getUser();
 
-if (!user) {
+if (authError || !user) {
   return Astro.redirect('/auth/login');
 }
 
-// ── Helpers de tipo ───────────────────────────────────────────────────────────
+// ── Tipos ─────────────────────────────────────────────────────────────────────
 type AssessmentStatus = 'done' | 'in_progress' | 'not_started';
 interface CardState {
-  status: AssessmentStatus;
-  href:   string;
-  action: string;
+  status:     AssessmentStatus;
+  href:       string;
+  action:     string;
   badgeLabel: string;
 }
 
+// Estado padrão seguro — fallback silencioso em qualquer falha
+const defaultCard = (questionPath: string): CardState => ({
+  status:     'not_started',
+  href:       questionPath,
+  action:     'Iniciar mapeamento →',
+  badgeLabel: 'PENDENTE',
+});
+
 /**
- * Resolve o status real do card aplicando prioridade A → B → C:
- *   A) Existe sessão COMPLETA (>= maxAnswers respostas)?  → done
- *   B) Existe sessão com > 0 respostas?                   → in_progress
- *   C) Nenhuma sessão ou todas vazias                     → not_started
+ * Resolve o status do card com prioridade A → B → C.
+ * TOTALMENTE DEFENSIVO — nunca lança exceção, nunca causa HTTP 500.
  *
- * Isso ignora "ghost rows" (sessões criadas mas jamais respondidas)
- * que enganavam a query .limit(1) anterior.
+ *   A) Sessão COMPLETA (>= maxAnswers)  → done
+ *   B) Sessão em andamento (> 0)        → in_progress
+ *   C) Ghost rows / sem sessão          → not_started
  */
 async function resolveAssessmentStatus(opts: {
   assessmentTable: string;
@@ -50,78 +58,102 @@ async function resolveAssessmentStatus(opts: {
 }): Promise<CardState> {
   const { assessmentTable, answersTable, maxAnswers, reportPath, questionPath } = opts;
 
-  // Busca TODAS as sessões do usuário (ordenadas da mais recente para a mais antiga)
-  const { data: sessions } = await supabase
-    .from(assessmentTable)
-    .select('id')
-    .eq('user_id', user!.id)   // 🔒 anti-leak: sempre filtra pelo user logado
-    .order('created_at', { ascending: false });
+  try {
+    // Busca TODAS as sessões do usuário — nunca .limit(1) (evita ghost row bug)
+    const { data: sessions, error: sessionsError } = await supabase
+      .from(assessmentTable)
+      .select('id')
+      .eq('user_id', user!.id)   // 🔒 anti-leak: filtra estritamente pelo user logado
+      .order('created_at', { ascending: false });
 
-  if (!sessions || sessions.length === 0) {
-    return { status: 'not_started', href: questionPath, action: 'Iniciar mapeamento →', badgeLabel: 'PENDENTE' };
+    if (sessionsError) {
+      console.error(`[analises] Erro ao buscar ${assessmentTable}:`, sessionsError.message);
+      return defaultCard(questionPath);
+    }
+
+    if (!sessions || sessions.length === 0) {
+      return defaultCard(questionPath);
+    }
+
+    // Conta respostas de cada sessão em paralelo
+    const counts = await Promise.all(
+      sessions.map(async (s) => {
+        const { count, error: countError } = await supabase
+          .from(answersTable)
+          .select('id', { count: 'exact', head: true })
+          .eq('assessment_id', s.id);
+
+        if (countError) {
+          console.error(`[analises] Erro ao contar ${answersTable} (id=${s.id}):`, countError.message);
+        }
+        return { id: s.id, count: count ?? 0 };
+      })
+    );
+
+    // A) Sessão COMPLETA — ignora ghost rows
+    const completedSession = counts.find(c => c.count >= maxAnswers);
+    if (completedSession) {
+      return {
+        status:     'done',
+        href:       `${reportPath}?id=${completedSession.id}`,
+        action:     'Ver resultado →',
+        badgeLabel: 'CONCLUÍDO',
+      };
+    }
+
+    // B) Sessão em andamento
+    const inProgressSession = counts.find(c => c.count > 0);
+    if (inProgressSession) {
+      return {
+        status:     'in_progress',
+        href:       questionPath,
+        action:     'Continuar mapeamento →',
+        badgeLabel: 'PENDENTE',
+      };
+    }
+
+    // C) Só ghost rows (0 respostas em todas) ou nenhuma sessão real
+    return defaultCard(questionPath);
+
+  } catch (err: any) {
+    // Nunca deixa o SSR explodir — loga e retorna estado seguro
+    console.error(`[analises] Exceção em resolveAssessmentStatus(${assessmentTable}):`, err?.message ?? err);
+    return defaultCard(questionPath);
   }
-
-  // Para cada sessão, busca a contagem de respostas em paralelo
-  const counts = await Promise.all(
-    sessions.map(async (s) => {
-      const { count } = await supabase
-        .from(answersTable)
-        .select('id', { count: 'exact', head: true })
-        .eq('assessment_id', s.id);
-      return { id: s.id, count: count ?? 0 };
-    })
-  );
-
-  // A) Prioridade máxima: sessão COMPLETA (>= maxAnswers) — ignora ghost rows
-  const completedSession = counts.find(c => c.count >= maxAnswers);
-  if (completedSession) {
-    return {
-      status: 'done',
-      href:   `${reportPath}?id=${completedSession.id}`,
-      action: 'Ver resultado →',
-      badgeLabel: 'CONCLUÍDO',
-    };
-  }
-
-  // B) Sessão iniciada mas incompleta (> 0 respostas)
-  const inProgressSession = counts.find(c => c.count > 0);
-  if (inProgressSession) {
-    return {
-      status: 'in_progress',
-      href:   questionPath,
-      action: 'Continuar mapeamento →',
-      badgeLabel: 'PENDENTE',
-    };
-  }
-
-  // C) Só ghost rows (0 respostas em todas as sessões) ou nenhuma sessão
-  return { status: 'not_started', href: questionPath, action: 'Iniciar mapeamento →', badgeLabel: 'PENDENTE' };
 }
 
-// ── 3. Resolve os 3 testes em paralelo ───────────────────────────────────────
-const [egoCard, enneCard, discCard] = await Promise.all([
-  resolveAssessmentStatus({
-    assessmentTable: 'egogram_assessments',
-    answersTable:    'egogram_answers',
-    maxAnswers:      50,
-    reportPath:      '/app/relatorio',
-    questionPath:    '/app/pergunta',
-  }),
-  resolveAssessmentStatus({
-    assessmentTable: 'enneagram_assessments',
-    answersTable:    'enneagram_answers',
-    maxAnswers:      45,
-    reportPath:      '/app/eneagrama/relatorio',
-    questionPath:    '/app/eneagrama/pergunta',
-  }),
-  resolveAssessmentStatus({
-    assessmentTable: 'disc_assessments',
-    answersTable:    'disc_answers',
-    maxAnswers:      30,
-    reportPath:      '/app/disc/relatorio',
-    questionPath:    '/app/disc/pergunta',
-  }),
-]);
+// ── 3. Resolve os 3 testes em paralelo com fallback global ────────────────────
+let egoCard:  CardState = defaultCard('/app/pergunta');
+let enneCard: CardState = defaultCard('/app/eneagrama/pergunta');
+let discCard: CardState = defaultCard('/app/disc/pergunta');
+
+try {
+  [egoCard, enneCard, discCard] = await Promise.all([
+    resolveAssessmentStatus({
+      assessmentTable: 'egogram_assessments',
+      answersTable:    'egogram_answers',
+      maxAnswers:      50,
+      reportPath:      '/app/relatorio',
+      questionPath:    '/app/pergunta',
+    }),
+    resolveAssessmentStatus({
+      assessmentTable: 'enneagram_assessments',
+      answersTable:    'enneagram_answers',
+      maxAnswers:      45,
+      reportPath:      '/app/eneagrama/relatorio',
+      questionPath:    '/app/eneagrama/pergunta',
+    }),
+    resolveAssessmentStatus({
+      assessmentTable: 'disc_assessments',
+      answersTable:    'disc_answers',
+      maxAnswers:      30,
+      reportPath:      '/app/disc/relatorio',
+      questionPath:    '/app/disc/pergunta',
+    }),
+  ]);
+} catch (err: any) {
+  console.error('[analises] Falha crítica no Promise.all — renderizando com fallback:', err?.message ?? err);
+}
 ---
 
 <AppLayout title="Central de Análises" activeNav="analises">
