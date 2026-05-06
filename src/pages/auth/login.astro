@@ -122,7 +122,22 @@ const safeNext = nextUrl.startsWith('/app') ? nextUrl : '/app/home';
         return;
       }
 
-      // Sucesso — redireciona para a URL de destino salva no data-next
+      // CRÍTICO: Sincroniza o token do browser nos cookies do servidor
+      // O middleware SSR lê cookies — sem isso ele vê user=null e bloqueia /app/home
+      try {
+        await fetch('/api/auth/set-session', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            access_token:  data.session.access_token,
+            refresh_token: data.session.refresh_token,
+          }),
+        });
+      } catch (syncErr) {
+        console.warn('[LOGIN] Falha ao sincronizar sessão nos cookies:', syncErr);
+      }
+
+      // Redireciona para a URL de destino salva no data-next
       const nextUrl = form.dataset.next ?? '/app/home';
       if (btnSubmit) { btnSubmit.textContent = '✓ Acesso liberado! Redirecionando…'; }
       window.location.href = nextUrl;
