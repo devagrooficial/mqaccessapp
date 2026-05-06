@@ -114,104 +114,124 @@ async function calcEgogramaBadge(): Promise<BadgeResult> {
   return `Egograma: ${labelMap[dominant]}`;
 }
 
-const [
-  { data: courses },
-  { data: books },
-  { data: events },
-  { data: profile },
-  badgeDisc,
-  badgeEnea,
-  badgeEgo,
-  // ── KPI Counters — head:true = zero payload, apenas o inteiro ──────────────
-  { count: cursosRaw },
-  { count: eventosRaw },
-  { count: livrosRaw },
-] = await Promise.all([
-  // Masterclasses em destaque (máx 6)
-  supabase
-    .from('products')
-    .select('id, title, author, thumbnail_url, price_brl')
-    .eq('type', 'masterclass')
-    .eq('is_active', true)
-    .order('created_at', { ascending: false })
-    .limit(6),
+// ── Blindagem SSR: qualquer falha de banco degrada graciosamente ────────────
+let serverError: string | null = null;
 
-  // Livros (ebook + physical_book)
-  supabase
-    .from('products')
-    .select('id, title, author, cover_url, product_format')
-    .in('type', ['ebook', 'physical_book'])
-    .eq('is_active', true)
-    .limit(4),
+let courseList:  any[] = [];
+let bookList:    any[] = [];
+let eventList:   any[] = [];
+let firstName        = 'Executivo';
+let hasBadges: any   = false;
+let badgeDisc:  any  = null;
+let badgeEnea:  any  = null;
+let badgeEgo:   any  = null;
+let cursosCount  = 0;
+let eventosCount = 0;
+let livrosCount  = 0;
 
-  // Próximos eventos (data futura)
-  supabase
-    .from('events')
-    .select('id, title, date, venue_name, banner_url')
-    .eq('is_active', true)
-    .gte('date', new Date().toISOString())
-    .order('date', { ascending: true })
-    .limit(3),
+try {
+  const [
+    { data: courses },
+    { data: books },
+    { data: events },
+    { data: profile },
+    _badgeDisc,
+    _badgeEnea,
+    _badgeEgo,
+    { count: cursosRaw },
+    { count: eventosRaw },
+    { count: livrosRaw },
+  ] = await Promise.all([
+    // Masterclasses em destaque (máx 6)
+    supabase
+      .from('products')
+      .select('id, title, author, thumbnail_url, price_brl')
+      .eq('type', 'masterclass')
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
+      .limit(6),
 
-  // Profile do usuário logado
-  userId
-    ? supabase.from('profiles').select('full_name').eq('id', userId).single()
-    : Promise.resolve({ data: null }),
+    // Livros (ebook + physical_book)
+    supabase
+      .from('products')
+      .select('id, title, author, cover_url, product_format')
+      .in('type', ['ebook', 'physical_book'])
+      .eq('is_active', true)
+      .limit(4),
 
-  // Badges comportamentais (paralelo — zero custo extra se não houver assessments)
-  calcDiscBadge(),
-  calcEneagramaBadge(),
-  calcEgogramaBadge(),
+    // Próximos eventos (data futura)
+    supabase
+      .from('events')
+      .select('id, title, date, venue_name, banner_url')
+      .eq('is_active', true)
+      .gte('date', new Date().toISOString())
+      .order('date', { ascending: true })
+      .limit(3),
 
-  // ── KPI: Cursos adquiridos (approved) ────────────────────────────────────────
-  // Espelha exatamente digitalPurchases em compras/index.astro:
-  // purchases JOIN products WHERE type = 'masterclass' AND payment_status = 'approved'
-  userId
-    ? supabase
-        .from('purchases')
-        .select('id, products!inner(type)', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('payment_status', 'approved')
-        .eq('products.type', 'masterclass')
-    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+    // Profile do usuário logado
+    userId
+      ? supabase.from('profiles').select('full_name').eq('id', userId).single()
+      : Promise.resolve({ data: null }),
 
-  // ── KPI: Ingressos de Eventos ─────────────────────────────────────────────────
-  // Espelha exatamente meusIngressos em compras/index.astro:
-  // tickets WHERE user_id = userId
-  userId
-    ? supabase
-        .from('tickets')
-        .select('id', { count: 'exact', head: true })
-        .eq('user_id', userId)
-    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+    // Badges comportamentais
+    calcDiscBadge(),
+    calcEneagramaBadge(),
+    calcEgogramaBadge(),
 
-  // ── KPI: Livros na Biblioteca ─────────────────────────────────────────────────
-  // Espelha exatamente ebookPurchases em compras/index.astro:
-  // purchases JOIN products WHERE type IN ('ebook','book') AND payment_status = 'approved'
-  userId
-    ? supabase
-        .from('purchases')
-        .select('id, products!inner(type)', { count: 'exact', head: true })
-        .eq('user_id', userId)
-        .eq('payment_status', 'approved')
-        .in('products.type', ['ebook', 'book'])
-    : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
-]);
+    // KPI: Cursos adquiridos
+    userId
+      ? supabase
+          .from('purchases')
+          .select('id, products!inner(type)', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('payment_status', 'approved')
+          .eq('products.type', 'masterclass')
+      : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
 
-// Fallback para quando o banco ainda não tem dados
-const courseList  = courses  ?? [];
-const bookList    = books    ?? [];
-const eventList   = events   ?? [];
-const firstName   = (profile as any)?.full_name?.split(' ')[0] ?? 'Executivo';
-const hasBadges   = badgeDisc || badgeEnea || badgeEgo;
+    // KPI: Ingressos de Eventos
+    userId
+      ? supabase
+          .from('tickets')
+          .select('id', { count: 'exact', head: true })
+          .eq('user_id', userId)
+      : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
 
-// KPI safe fallbacks
-const cursosCount  = cursosRaw  ?? 0;
-const eventosCount = eventosRaw ?? 0;
-const livrosCount  = livrosRaw  ?? 0;
+    // KPI: Livros na Biblioteca
+    userId
+      ? supabase
+          .from('purchases')
+          .select('id, products!inner(type)', { count: 'exact', head: true })
+          .eq('user_id', userId)
+          .eq('payment_status', 'approved')
+          .in('products.type', ['ebook', 'book'])
+      : Promise.resolve({ count: 0, data: null, error: null, status: 200, statusText: 'OK' }),
+  ]);
+
+  courseList   = courses  ?? [];
+  bookList     = books    ?? [];
+  eventList    = events   ?? [];
+  firstName    = (profile as any)?.full_name?.split(' ')[0] ?? 'Executivo';
+  badgeDisc    = _badgeDisc;
+  badgeEnea    = _badgeEnea;
+  badgeEgo     = _badgeEgo;
+  hasBadges    = _badgeDisc || _badgeEnea || _badgeEgo;
+  cursosCount  = cursosRaw  ?? 0;
+  eventosCount = eventosRaw ?? 0;
+  livrosCount  = livrosRaw  ?? 0;
+
+} catch (err: any) {
+  // Loga o erro real no console do servidor (visível nos logs do Render)
+  console.error('🚨 [HOME SSR] Erro fatal ao carregar dados:', err?.message ?? err);
+  serverError = err?.message ?? 'Erro desconhecido ao carregar dados do servidor.';
+}
 ---
 
 <AppLayout title="Home" activeNav="home">
+  {serverError && (
+    <div style="background:#7f1d1d;color:#fca5a5;padding:16px 20px;font-family:monospace;font-size:0.8125rem;border-bottom:1px solid #991b1b;">
+      🚨 <strong>ERRO SSR HOME:</strong> {serverError}
+    </div>
+  )}
   <div class="home-page">
 
     <!-- Saudação -->
