@@ -4,17 +4,22 @@ import AppLayout from '@/layouts/AppLayout.astro';
 const supabase = Astro.locals.supabase;
 const user     = Astro.locals.user;
 
+// ── Guarda crítica: nunca renderiza sem sessão válida ─────────────────────────
+if (!user) {
+  return Astro.redirect('/auth/login');
+}
+
 // ── Busca o último assessment do usuário + contagem de respostas ─────────────
 let egoStatus: 'done' | 'pending' = 'pending';
 let egoHref   = '/app/pergunta';
 let egoAction = 'Iniciar mapeamento →';
 let egoAssessmentId: string | null = null;
 
-if (user) {
+{
   const { data: lastAssessment } = await supabase
     .from('egogram_assessments')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -22,11 +27,12 @@ if (user) {
   if (lastAssessment?.id) {
     egoAssessmentId = lastAssessment.id;
 
-    // Conta quantas respostas este assessment tem
+    // Conta respostas — filtro duplo: assessment_id + user_id via join
     const { count } = await supabase
       .from('egogram_answers')
-      .select('id', { count: 'exact', head: true })
-      .eq('assessment_id', lastAssessment.id);
+      .select('id, egogram_assessments!inner(user_id)', { count: 'exact', head: true })
+      .eq('assessment_id', lastAssessment.id)
+      .eq('egogram_assessments.user_id', user.id); // 🔒 Dupla proteção
 
     if ((count ?? 0) >= 50) {
       egoStatus = 'done';
@@ -44,11 +50,11 @@ let enneStatus: 'done' | 'pending' = 'pending';
 let enneHref   = '/app/eneagrama/pergunta';
 let enneAction = 'Iniciar mapeamento →';
 
-if (user) {
+{
   const { data: lastEnne } = await supabase
     .from('enneagram_assessments')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -56,8 +62,9 @@ if (user) {
   if (lastEnne?.id) {
     const { count: enneCount } = await supabase
       .from('enneagram_answers')
-      .select('id', { count: 'exact', head: true })
-      .eq('assessment_id', lastEnne.id);
+      .select('id, enneagram_assessments!inner(user_id)', { count: 'exact', head: true })
+      .eq('assessment_id', lastEnne.id)
+      .eq('enneagram_assessments.user_id', user.id); // 🔒 Dupla proteção
 
     if ((enneCount ?? 0) >= 45) {
       enneStatus = 'done';
@@ -75,11 +82,11 @@ let discStatus: 'done' | 'pending' = 'pending';
 let discHref   = '/app/disc/pergunta';
 let discAction = 'Iniciar mapeamento →';
 
-if (user) {
+{
   const { data: lastDisc } = await supabase
     .from('disc_assessments')
     .select('id')
-    .eq('user_id', user.id)
+    .eq('user_id', user.id)          // 🔒 Filtro RLS explícito — anti-leak
     .order('created_at', { ascending: false })
     .limit(1)
     .maybeSingle();
@@ -87,8 +94,9 @@ if (user) {
   if (lastDisc?.id) {
     const { count: discCount } = await supabase
       .from('disc_answers')
-      .select('id', { count: 'exact', head: true })
-      .eq('assessment_id', lastDisc.id);
+      .select('id, disc_assessments!inner(user_id)', { count: 'exact', head: true })
+      .eq('assessment_id', lastDisc.id)
+      .eq('disc_assessments.user_id', user.id); // 🔒 Dupla proteção
 
     if ((discCount ?? 0) >= 30) {
       discStatus = 'done';
