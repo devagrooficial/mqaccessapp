@@ -124,6 +124,7 @@ const safeNext = nextUrl.startsWith('/app') ? nextUrl : '/app/home';
 
       // Sucesso — redireciona para a URL de destino salva no data-next
       const nextUrl = form.dataset.next ?? '/app/home';
+      if (btnSubmit) { btnSubmit.textContent = '✓ Acesso liberado! Redirecionando…'; }
       window.location.href = nextUrl;
     });
   }
